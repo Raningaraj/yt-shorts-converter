@@ -1,0 +1,10 @@
+venv/
+__pycache__/
+*.py[cod]
+*.log
+.env
+.DS_Store
+backend/downloads/
+backend/output_shorts/
+downloads/
+output_shorts/
