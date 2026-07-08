@@ -21,8 +21,9 @@ if "flask_started" not in st.session_state:
         flask_env = os.environ.copy()
         flask_env["FLASK_ENV"] = "production"
         flask_env["FLASK_APP"] = "backend/app.py"
+        flask_env["FLASK_DEBUG"] = "0"
         subprocess.Popen(
-            [sys.executable, "-m", "flask", "run", "--host=0.0.0.0", "--port=5000"],
+            [sys.executable, "-m", "flask", "run", "--host=0.0.0.0", "--port=5000", "--no-debugger", "--no-reload"],
             cwd=".",
             env=flask_env,
             stdout=subprocess.DEVNULL,
