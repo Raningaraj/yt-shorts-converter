@@ -18,6 +18,10 @@ imageio-ffmpeg>=0.4.9
 flask>=3.0.0
 flask-cors>=4.0.0
 
+# Frontend
+streamlit>=1.28.0
+requests>=2.31.0
+
 # Environment variables (.env file support)
 python-dotenv>=1.0.0
 

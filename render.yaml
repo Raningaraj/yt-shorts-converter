@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: yt-shorts-converter
+    runtime: python
+    pythonVersion: 3.11
+    buildCommand: pip install -r requirements.txt
+    startCommand: python start.py
+    envVars:
+      - key: FLASK_PORT
+        value: 5000
+      - key: PORT
+        value: 8501
+    healthCheckPath: /
