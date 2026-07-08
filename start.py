@@ -1,100 +1,92 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """
-Startup script for Railway/Render that manages both Flask and Streamlit processes
+Combined startup script for Railway/Render
+Runs Flask backend and Streamlit frontend together
 """
 import os
 import sys
 import subprocess
 import time
 import signal
+from pathlib import Path
 
-# Get port from environment or use defaults
-FLASK_PORT = os.getenv("FLASK_PORT", "5000")
-STREAMLIT_PORT = os.getenv("PORT", "8501")  # Railway/Render use PORT for Streamlit
+# Get port from environment
+# Railway uses PORT env var for the main service
+PORT = os.getenv("PORT", "8501")  # Streamlit runs on exposed port
+FLASK_PORT = "5000"  # Flask internal only
 
-# Set environment variables for Flask
+# Set Python path
+os.environ["PYTHONUNBUFFERED"] = "1"
+
+# Flask config
 os.environ["FLASK_ENV"] = "production"
 os.environ["FLASK_APP"] = "backend/app.py"
 
-# Set environment variables for Streamlit
-os.environ["STREAMLIT_SERVER_PORT"] = STREAMLIT_PORT
+# Streamlit config
+os.environ["STREAMLIT_SERVER_PORT"] = PORT
 os.environ["STREAMLIT_SERVER_ADDRESS"] = "0.0.0.0"
 os.environ["STREAMLIT_SERVER_HEADLESS"] = "true"
 os.environ["STREAMLIT_CLIENT_SHOWERRORDETAILS"] = "false"
+os.environ["STREAMLIT_LOGGER_LEVEL"] = "warning"
 
-# Backend URL for Streamlit to communicate with Flask
+# Backend URL for Streamlit to call Flask
 os.environ["BACKEND_URL"] = f"http://localhost:{FLASK_PORT}"
+
+print(f"[INIT] Port: {PORT}, Flask: {FLASK_PORT}", flush=True)
 
 processes = []
 
-def signal_handler(sig, frame):
-    """Handle shutdown gracefully"""
-    print("\n[STARTUP] Shutting down services...")
-    for process in processes:
+def cleanup(sig=None, frame=None):
+    """Clean shutdown"""
+    print("[CLEANUP] Shutting down...", flush=True)
+    for p in processes:
         try:
-            process.terminate()
-            process.wait(timeout=5)
+            p.terminate()
+            p.wait(timeout=5)
         except:
-            process.kill()
+            try:
+                p.kill()
+            except:
+                pass
     sys.exit(0)
 
-signal.signal(signal.SIGINT, signal_handler)
-signal.signal(signal.SIGTERM, signal_handler)
+signal.signal(signal.SIGTERM, cleanup)
+signal.signal(signal.SIGINT, cleanup)
 
-def start_flask():
-    """Start Flask backend"""
-    print(f"[STARTUP] Starting Flask backend on port {FLASK_PORT}...")
-    cmd = [
-        sys.executable, 
-        "-m", 
-        "flask", 
-        "run", 
-        "--host=0.0.0.0",
-        f"--port={FLASK_PORT}"
-    ]
-    process = subprocess.Popen(cmd, cwd=".")
-    processes.append(process)
-    return process
+# Start Flask backend
+print("[STARTUP] Starting Flask...", flush=True)
+flask_proc = subprocess.Popen(
+    [sys.executable, "-m", "flask", "run", "--host=0.0.0.0", f"--port={FLASK_PORT}"],
+    stdout=subprocess.PIPE,
+    stderr=subprocess.STDOUT,
+    text=True,
+    bufsize=1
+)
+processes.append(flask_proc)
+time.sleep(2)
 
-def start_streamlit():
-    """Start Streamlit frontend"""
-    print(f"[STARTUP] Starting Streamlit app on port {STREAMLIT_PORT}...")
-    cmd = [
-        sys.executable,
-        "-m",
-        "streamlit",
-        "run",
-        "streamlit_app.py",
-        "--logger.level=warning"
-    ]
-    process = subprocess.Popen(cmd, cwd=".")
-    processes.append(process)
-    return process
+# Start Streamlit
+print("[STARTUP] Starting Streamlit...", flush=True)
+streamlit_proc = subprocess.Popen(
+    [sys.executable, "-m", "streamlit", "run", "streamlit_app.py"],
+    stdout=subprocess.PIPE,
+    stderr=subprocess.STDOUT,
+    text=True,
+    bufsize=1
+)
+processes.append(streamlit_proc)
 
-if __name__ == "__main__":
-    print("[STARTUP] Initializing YouTube to Shorts Converter...")
-    
-    # Start both services
-    flask_process = start_flask()
-    time.sleep(3)  # Give Flask time to start
-    
-    streamlit_process = start_streamlit()
-    
-    print(f"[STARTUP] Both services started!")
-    print(f"  - Flask backend: http://localhost:{FLASK_PORT}")
-    print(f"  - Streamlit frontend: http://localhost:{STREAMLIT_PORT}")
-    
-    # Keep processes running
-    try:
-        while True:
-            # Check if either process has died
-            if not flask_process.poll() is None:
-                print("[ERROR] Flask backend crashed!")
-                sys.exit(1)
-            if not streamlit_process.poll() is None:
-                print("[ERROR] Streamlit app crashed!")
-                sys.exit(1)
-            
-            time.sleep(5)
-    except KeyboardInterrupt:
-        signal_handler(None, None)
+print("[STARTUP] Both services running", flush=True)
+
+# Keep them alive
+try:
+    while True:
+        if flask_proc.poll() is not None:
+            print("[ERROR] Flask died", flush=True)
+            break
+        if streamlit_proc.poll() is not None:
+            print("[ERROR] Streamlit died", flush=True)
+            break
+        time.sleep(5)
+except KeyboardInterrupt:
+    cleanup()
