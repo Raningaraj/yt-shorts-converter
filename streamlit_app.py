@@ -2,7 +2,34 @@ import streamlit as st
 import requests
 import time
 import os
+import subprocess
+import sys
 from pathlib import Path
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Start Flask backend in the background (only once)
+# ═══════════════════════════════════════════════════════════════════════════
+
+if "flask_started" not in st.session_state:
+    try:
+        # Check if Flask is already running
+        requests.get("http://localhost:5000/api/convert", timeout=1)
+        st.session_state.flask_started = True
+    except:
+        # Flask not running, start it
+        print("[STREAMLIT] Starting Flask backend...", flush=True)
+        flask_env = os.environ.copy()
+        flask_env["FLASK_ENV"] = "production"
+        flask_env["FLASK_APP"] = "backend/app.py"
+        subprocess.Popen(
+            [sys.executable, "-m", "flask", "run", "--host=0.0.0.0", "--port=5000"],
+            cwd=".",
+            env=flask_env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+        time.sleep(3)  # Give Flask time to start
+        st.session_state.flask_started = True
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Streamlit Frontend for YouTube to Shorts Converter
