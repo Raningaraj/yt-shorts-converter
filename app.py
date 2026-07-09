@@ -14,7 +14,7 @@ OUTPUT_DIR = BACKEND_DIR / "output_shorts"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 app = Flask(__name__, static_folder=str(FRONTEND_DIR), static_url_path="/")
-CORS(app)
+CORS(app, expose_headers=["Content-Disposition"])
 
 jobs: dict[str, dict] = {}
 

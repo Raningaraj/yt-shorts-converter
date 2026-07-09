@@ -312,7 +312,10 @@
   <div id="results-section">
     <div class="results-header">
       <h3>🎬 Your Shorts are Ready</h3>
-      <span class="count" id="resultCount">0 Shorts</span>
+      <div style="display: flex; gap: 12px; align-items: center;">
+        <span class="count" id="resultCount">0 Shorts</span>
+        <button class="btn" style="padding: 6px 12px; font-size: 0.75rem; font-weight: bold; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); color: var(--text); border-radius: 8px; cursor: pointer; transition: background 0.15s;" onclick="clearHistory()">Clear History</button>
+      </div>
     </div>
     <div class="shorts-grid" id="shortsGrid"></div>
   </div>
@@ -380,6 +383,23 @@ window.addEventListener("DOMContentLoaded", () => {
     document.getElementById("backendUrlInput").value = saved;
   } else {
     document.getElementById("backendUrlInput").value = "https://yt-shorts-converter-1.onrender.com";
+  }
+
+  // Load recently converted shorts if they exist in localStorage and are less than 24 hours old
+  const savedShortsRaw = localStorage.getItem("LAST_CONVERTED_SHORTS");
+  if (savedShortsRaw) {
+    try {
+      const savedShorts = JSON.parse(savedShortsRaw);
+      // Show immediately if generated in the last 24 hours (before Render server disk gets recycled)
+      if (Date.now() - savedShorts.timestamp < 24 * 60 * 60 * 1000) {
+        // Wait minor delay to guarantee DOM is rendered
+        setTimeout(() => renderResults(savedShorts.files), 100);
+      } else {
+        localStorage.removeItem("LAST_CONVERTED_SHORTS");
+      }
+    } catch (e) {
+      localStorage.removeItem("LAST_CONVERTED_SHORTS");
+    }
   }
 });
 
@@ -494,6 +514,13 @@ function pollJob(jobId) {
         clearInterval(pollTimer);
         setStep(4, true);
         setProgress(100, "Done! 🎉");
+        
+        // Save to browser LocalStorage
+        localStorage.setItem("LAST_CONVERTED_SHORTS", JSON.stringify({
+          files: data.files,
+          timestamp: Date.now()
+        }));
+
         setTimeout(() => renderResults(data.files), 600);
       } else if (data.status === "error") {
         clearInterval(pollTimer);
@@ -541,8 +568,19 @@ function renderResults(files) {
   document.getElementById("convertBtn").disabled = false;
 }
 
-async function downloadShort(filename) {
-  window.open(`${API}/download/${encodeURIComponent(filename)}`, "_blank");
+function downloadShort(filename) {
+  const link = document.createElement("a");
+  link.href = `${API}/download/${encodeURIComponent(filename)}`;
+  link.setAttribute("download", filename);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
+function clearHistory() {
+  localStorage.removeItem("LAST_CONVERTED_SHORTS");
+  hide("results-section");
+  document.getElementById("shortsGrid").innerHTML = "";
 }
 
 
