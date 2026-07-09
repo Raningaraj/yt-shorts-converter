@@ -367,8 +367,8 @@ function getApiUrl() {
     }
   }
   
-  // Default to relative if no settings and same host
-  return "/api";
+  // Default to user's Render backend URL in production
+  return "https://yt-shorts-converter-1.onrender.com/api";
 }
 
 let API = getApiUrl();
@@ -378,9 +378,8 @@ window.addEventListener("DOMContentLoaded", () => {
   const saved = localStorage.getItem("YT_SHORTS_BACKEND_URL");
   if (saved) {
     document.getElementById("backendUrlInput").value = saved;
-  } else if (window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1") {
-    // If hosted on Netlify, automatically show the settings panel on first load to prompt the user
-    showSettings();
+  } else {
+    document.getElementById("backendUrlInput").value = "https://yt-shorts-converter-1.onrender.com";
   }
 });
 
