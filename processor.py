@@ -44,6 +44,11 @@ def download_video(url: str):
         "merge_output_format": "mp4",
         "quiet": True,
         "no_warnings": True,
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["ios"]
+            }
+        }
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info     = ydl.extract_info(url, download=True)
