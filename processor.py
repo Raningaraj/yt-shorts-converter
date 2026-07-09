@@ -4,6 +4,7 @@ import re
 import textwrap
 import subprocess
 import tempfile
+import urllib.request
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -37,32 +38,86 @@ if not GROQ_API_KEY:
 groq_client = Groq(api_key=GROQ_API_KEY)
 
 
+def fetch_free_proxies():
+    url = "https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=10000&country=all&ssl=all&anonymity=all"
+    try:
+        req = urllib.request.Request(
+            url, 
+            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+        )
+        with urllib.request.urlopen(req, timeout=8) as response:
+            proxies = response.read().decode('utf-8').strip().split('\n')
+            return [p.strip() for p in proxies if p.strip()]
+    except Exception as e:
+        print(f"Warning: Cannot fetch free proxy list: {e}")
+        return []
+
+
 def download_video(url: str):
-    ydl_opts = {
-        "format": "bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4]",
-        "outtmpl": str(DOWNLOAD_DIR / "%(id)s.%(ext)s"),
-        "merge_output_format": "mp4",
-        "quiet": True,
-        "no_warnings": True,
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["ios"]
+    # Convert standard YouTube link to embed format to reduce bot checking
+    video_id = None
+    if "youtu.be/" in url:
+        video_id = url.split("youtu.be/")[-1].split("?")[0].split("&")[0]
+    elif "watch?v=" in url:
+        video_id = url.split("watch?v=")[-1].split("&")[0]
+    elif "embed/" in url:
+        video_id = url.split("embed/")[-1].split("?")[0]
+        
+    if video_id:
+        url = f"https://www.youtube.com/embed/{video_id}"
+        print(f"Downloading via iframe embed URL: {url}")
+
+    # Fetch a list of working proxies
+    print("Fetching free proxy list to bypass datacenter IP restrictions...")
+    proxies = fetch_free_proxies()
+    print(f"Fetched {len(proxies)} proxies.")
+
+    # Always try direct download first (no proxy)
+    attempts = [None] + proxies[:15]
+
+    for i, proxy in enumerate(attempts):
+        ydl_opts = {
+            "format": "bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4]",
+            "outtmpl": str(DOWNLOAD_DIR / "%(id)s.%(ext)s"),
+            "merge_output_format": "mp4",
+            "quiet": True,
+            "no_warnings": True,
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["tv", "web_embedded"]
+                }
             }
         }
-    }
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info     = ydl.extract_info(url, download=True)
-        video_id = info["id"]
-        title    = info.get("title", "video")
-        
-        expected_path = Path(ydl.prepare_filename(info))
-        if not expected_path.exists():
-            for f in DOWNLOAD_DIR.glob(f"{video_id}.*"):
-                if f.suffix in [".mp4", ".mkv", ".webm", ".avi"]:
-                    expected_path = f
-                    break
-        print(f"Downloaded: '{title}' to {expected_path.name}")
-    return expected_path, title
+        if proxy:
+            ydl_opts["proxy"] = f"http://{proxy}"
+            print(f"[Attempt {i}] Downloading via proxy: {proxy}...")
+        else:
+            print(f"[Attempt {i}] Downloading directly (no proxy)...")
+
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info     = ydl.extract_info(url, download=True)
+                video_id = info["id"]
+                title    = info.get("title", "video")
+                
+                expected_path = Path(ydl.prepare_filename(info))
+                if not expected_path.exists():
+                    for f in DOWNLOAD_DIR.glob(f"{video_id}.*"):
+                        if f.suffix in [".mp4", ".mkv", ".webm", ".avi"]:
+                            expected_path = f
+                            break
+                print(f"Downloaded: '{title}' to {expected_path.name}")
+                return expected_path, title
+        except Exception as e:
+            err_str = str(e)
+            print(f"[Attempt {i}] Failed: {err_str[:150]}")
+            if i < len(attempts) - 1:
+                print("Skipping to next attempt...")
+                continue
+            else:
+                raise e
+
+    raise RuntimeError("Failed to download YouTube video after trying direct and proxy attempts.")
 
 
 def get_ffmpeg():
