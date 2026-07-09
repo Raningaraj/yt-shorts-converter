@@ -1,8 +1,3 @@
-"""
-Flask REST API — YouTube to Shorts Converter
-Run: python app.py
-"""
-
 import os
 import threading
 import uuid
@@ -12,15 +7,15 @@ from flask_cors import CORS
 
 from processor import convert
 
-# Get absolute paths
+
 BACKEND_DIR = Path(__file__).parent
-FRONTEND_DIR = BACKEND_DIR.parent / "frontend"
+FRONTEND_DIR = BACKEND_DIR / "frontend"
 OUTPUT_DIR = BACKEND_DIR / "output_shorts"
+OUTPUT_DIR.mkdir(exist_ok=True)
 
 app = Flask(__name__, static_folder=str(FRONTEND_DIR), static_url_path="/")
 CORS(app)
 
-# In-memory job tracker (replace with Redis/DB for production)
 jobs: dict[str, dict] = {}
 
 
@@ -77,7 +72,7 @@ def job_status(job_id: str):
 @app.route("/api/download/<filename>")
 def download_short(filename: str):
     """Serve a generated short video."""
-    safe_name = Path(filename).name          # prevent path traversal
+    safe_name = Path(filename).name          
     file_path = OUTPUT_DIR / safe_name
     if not file_path.exists():
         return jsonify({"error": "file not found"}), 404
@@ -113,4 +108,4 @@ def server_error(e):
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    app.run(debug=True, port=port)
+    app.run(host="0.0.0.0", port=port, debug=True)

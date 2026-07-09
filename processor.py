@@ -1,5 +1,3 @@
-
-
 import os
 import json
 import re
@@ -8,17 +6,13 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-
 from dotenv import load_dotenv
-load_dotenv(dotenv_path=Path(__file__).parent / ".env")
-
+load_dotenv()  # Loads from the root directory .env or environment variables
 
 import yt_dlp
-import whisper
 import cv2
 import numpy as np
 from groq import Groq
-
 
 BACKEND_DIR   = Path(__file__).parent
 OUTPUT_DIR   = BACKEND_DIR / "output_shorts"
@@ -33,17 +27,14 @@ if not GROQ_API_KEY:
     print("="*60)
     print("\nSteps to fix:")
     print("1. Get a FREE Groq API key from: https://console.groq.com")
-    print("2. Create a .env file in backend/ folder with:")
+    print("2. Create a .env file in project root with:")
     print("   GROQ_API_KEY=gsk_your_key_here")
-    print("3. Or set it in terminal:")
-    print("   export GROQ_API_KEY='gsk_your_key_here'  (Mac/Linux)")
-    print("   set GROQ_API_KEY=gsk_your_key_here       (Windows CMD)")
+    print("3. Or set it in terminal/deployment variables:")
+    print("   export GROQ_API_KEY='gsk_your_key_here'")
     print("="*60 + "\n")
     raise ValueError("GROQ_API_KEY environment variable is not set")
 
-groq_client   = Groq(api_key=GROQ_API_KEY)
-WHISPER_MODEL = "base"   # tiny | base | small | medium
-
+groq_client = Groq(api_key=GROQ_API_KEY)
 
 
 def download_video(url: str):
@@ -62,15 +53,53 @@ def download_video(url: str):
     return DOWNLOAD_DIR / f"{video_id}.mp4", title
 
 
+def get_ffmpeg():
+    """Find ffmpeg — works with imageio-ffmpeg (no system install needed)."""
+    try:
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        return "ffmpeg"   # fall back to system ffmpeg if available
+
 
 def transcribe_video(video_path: Path) -> dict:
-    print(f"Loading Whisper '{WHISPER_MODEL}' model (local, no API cost)...")
-    model  = whisper.load_model(WHISPER_MODEL)
-    print("Transcribing... (may take a few minutes for long videos)")
-    result = model.transcribe(str(video_path), verbose=False, fp16=False)
-    print(f"Transcription done — {len(result['segments'])} segments found")
-    return result
-
+    print("Extracting audio for Groq transcriptions API...")
+    audio_path = video_path.with_suffix(".m4a")
+    ffmpeg = get_ffmpeg()
+    
+    # Extract audio: mono, 32k bitrate, AAC
+    cmd = [
+        ffmpeg, "-y",
+        "-i", str(video_path),
+        "-vn",
+        "-c:a", "aac",
+        "-b:a", "32k",
+        "-ac", "1",
+        str(audio_path)
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"Failed to extract audio with ffmpeg:\n{result.stderr}")
+        
+    print(f"Audio extracted to: {audio_path.name} ({audio_path.stat().st_size / 1024 / 1024:.2f} MB)")
+    
+    try:
+        print("Sending audio to Groq Whisper API (whisper-large-v3)...")
+        with open(audio_path, "rb") as file:
+            transcription = groq_client.audio.transcriptions.create(
+                file=(audio_path.name, file.read()),
+                model="whisper-large-v3",
+                response_format="verbose_json",
+            )
+        
+        transcription_dict = transcription.model_dump() if hasattr(transcription, "model_dump") else dict(transcription)
+        segments = transcription_dict.get("segments", [])
+        print(f"Transcription done — {len(segments)} segments completed")
+        return transcription_dict
+        
+    finally:
+        if audio_path.exists():
+            audio_path.unlink(missing_ok=True)
 
 
 ANALYSIS_PROMPT = """
@@ -133,16 +162,6 @@ def analyze_transcript(transcript_result: dict, video_title: str) -> list:
     return segments
 
 
-
-def get_ffmpeg():
-    """Find ffmpeg — works with imageio-ffmpeg (no system install needed)."""
-    try:
-        import imageio_ffmpeg
-        return imageio_ffmpeg.get_ffmpeg_exe()
-    except Exception:
-        return "ffmpeg"   # fall back to system ffmpeg if available
-
-
 def cut_clip_ffmpeg(source: Path, start: float, end: float, out: Path):
     """Cut a segment from source video using FFmpeg."""
     ffmpeg = get_ffmpeg()
@@ -172,7 +191,6 @@ def crop_to_vertical_ffmpeg(source: Path, out: Path):
     ]
     probe = subprocess.run(probe_cmd, capture_output=True, text=True)
     
-    
     match = re.search(r"(\d{3,4})x(\d{3,4})", probe.stderr)
     if not match:
         return source  # can't parse, skip crop
@@ -198,9 +216,8 @@ def crop_to_vertical_ffmpeg(source: Path, out: Path):
     return out
 
 
-
 def draw_text_with_background(frame, text, position, font_scale, color,
-                               bg_color=(0, 0, 0), thickness=2, padding=8):
+                              bg_color=(0, 0, 0), thickness=2, padding=8):
     """Draw text with a dark background box on a frame."""
     font      = cv2.FONT_HERSHEY_DUPLEX
     lines     = text.split("\n")
@@ -210,7 +227,6 @@ def draw_text_with_background(frame, text, position, font_scale, color,
     for i, line in enumerate(lines):
         ly = y + i * line_h
         (tw, th), _ = cv2.getTextSize(line, font, font_scale, thickness)
-        # Draw background rectangle
         cv2.rectangle(frame,
                       (x - padding, ly - th - padding),
                       (x + tw + padding, ly + padding),
@@ -234,21 +250,17 @@ def add_text_overlay_opencv(video_path: Path, out_path: Path,
     fps   = cap.get(cv2.CAP_PROP_FPS) or 30
     total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-    
     tmp_video = out_path.parent / f"_tmp_novid_{out_path.name}"
 
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     writer = cv2.VideoWriter(str(tmp_video), fourcc, fps, (w, h))
 
-    
     font_scale_title   = max(0.5, w / 1000)
     font_scale_caption = max(0.45, w / 1100)
 
-   
     max_chars = max(20, int(w / (14 * font_scale_caption)))
     wrapped_concept = "\n".join(textwrap.wrap(concept, max_chars))
 
-    
     title_frames = int(fps * 3)
     frame_idx    = 0
 
@@ -257,7 +269,6 @@ def add_text_overlay_opencv(video_path: Path, out_path: Path,
         if not ret:
             break
 
-        
         if frame_idx < title_frames:
             draw_text_with_background(
                 frame,
@@ -270,7 +281,6 @@ def add_text_overlay_opencv(video_path: Path, out_path: Path,
                 padding   = 10,
             )
 
-        
         lines      = wrapped_concept.split("\n")
         line_h     = int(32 * font_scale_caption)
         caption_y  = h - (len(lines) * line_h) - 30
@@ -292,7 +302,6 @@ def add_text_overlay_opencv(video_path: Path, out_path: Path,
     cap.release()
     writer.release()
 
-    
     ffmpeg = get_ffmpeg()
     cmd = [
         ffmpeg, "-y",
@@ -309,10 +318,8 @@ def add_text_overlay_opencv(video_path: Path, out_path: Path,
     tmp_video.unlink(missing_ok=True)
 
     if result.returncode != 0:
-       
         import shutil
         shutil.copy(str(tmp_video), str(out_path))
-
 
 
 def slugify(text: str) -> str:
@@ -351,11 +358,9 @@ def export_short(source_video: Path, segment: dict, idx: int, crop: bool = True)
         return out_path
 
     finally:
-        
         for f in [tmp_cut, tmp_crop]:
             if f.exists():
                 f.unlink(missing_ok=True)
-
 
 
 def convert(youtube_url: str, crop_to_vert: bool = True) -> list:
@@ -385,7 +390,7 @@ if __name__ == "__main__":
 
     if not os.environ.get("GROQ_API_KEY"):
         print("\nERROR: GROQ_API_KEY not found!")
-        print("Make sure backend/.env contains: GROQ_API_KEY=gsk_...")
+        print("Make sure .env contains: GROQ_API_KEY=gsk_...")
         print("Get a FREE key at: https://console.groq.com\n")
         sys.exit(1)
 
