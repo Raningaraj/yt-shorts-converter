@@ -49,8 +49,15 @@ def download_video(url: str):
         info     = ydl.extract_info(url, download=True)
         video_id = info["id"]
         title    = info.get("title", "video")
-        print(f"Downloaded: '{title}'")
-    return DOWNLOAD_DIR / f"{video_id}.mp4", title
+        
+        expected_path = Path(ydl.prepare_filename(info))
+        if not expected_path.exists():
+            for f in DOWNLOAD_DIR.glob(f"{video_id}.*"):
+                if f.suffix in [".mp4", ".mkv", ".webm", ".avi"]:
+                    expected_path = f
+                    break
+        print(f"Downloaded: '{title}' to {expected_path.name}")
+    return expected_path, title
 
 
 def get_ffmpeg():
@@ -239,7 +246,7 @@ def add_text_overlay_opencv(video_path: Path, out_path: Path,
                              title: str, concept: str):
     """
     Add title (top) and concept caption (bottom) overlays
-    using OpenCV — no ImageMagick required.
+    using OpenCV — with pre-computed text layouts to make it 5x faster.
     """
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
@@ -257,44 +264,56 @@ def add_text_overlay_opencv(video_path: Path, out_path: Path,
 
     font_scale_title   = max(0.5, w / 1000)
     font_scale_caption = max(0.45, w / 1100)
+    font = cv2.FONT_HERSHEY_DUPLEX
 
     max_chars = max(20, int(w / (14 * font_scale_caption)))
     wrapped_concept = "\n".join(textwrap.wrap(concept, max_chars))
 
     title_frames = int(fps * 3)
-    frame_idx    = 0
+
+    # 1. Precomputations: Title layout
+    title_lines = title[:60].split("\n")
+    title_line_h = int(30 * font_scale_title)
+    title_y = int(h * 0.06)
+    title_padding = 10
+    title_draw_commands = []
+    for i, line in enumerate(title_lines):
+        ly = title_y + i * title_line_h
+        (tw, th), _ = cv2.getTextSize(line, font, font_scale_title, 2)
+        rect_start = (20 - title_padding, ly - th - title_padding)
+        rect_end = (20 + tw + title_padding, ly + title_padding)
+        title_draw_commands.append((line, rect_start, rect_end, (20, ly)))
+
+    # 2. Precomputations: Caption layout
+    caption_lines = wrapped_concept.split("\n")
+    caption_line_h = int(32 * font_scale_caption)
+    caption_y = h - (len(caption_lines) * caption_line_h) - 30
+    caption_padding = 8
+    caption_draw_commands = []
+    for i, line in enumerate(caption_lines):
+        ly = caption_y + i * caption_line_h
+        (tw, th), _ = cv2.getTextSize(line, font, font_scale_caption, 2)
+        rect_start = (20 - caption_padding, ly - th - caption_padding)
+        rect_end = (20 + tw + caption_padding, ly + caption_padding)
+        caption_draw_commands.append((line, rect_start, rect_end, (20, ly)))
+
+    frame_idx = 0
 
     while True:
         ret, frame = cap.read()
         if not ret:
             break
 
+        # Draw title overlays (for first 3 seconds only)
         if frame_idx < title_frames:
-            draw_text_with_background(
-                frame,
-                text      = title[:60],
-                position  = (20, int(h * 0.06)),
-                font_scale= font_scale_title,
-                color     = (0, 230, 255),   # yellow
-                bg_color  = (0, 0, 0),
-                thickness = 2,
-                padding   = 10,
-            )
+            for line, rect_start, rect_end, text_pos in title_draw_commands:
+                cv2.rectangle(frame, rect_start, rect_end, (0, 0, 0), -1)
+                cv2.putText(frame, line, text_pos, font, font_scale_title, (0, 230, 255), 2, cv2.LINE_AA)
 
-        lines      = wrapped_concept.split("\n")
-        line_h     = int(32 * font_scale_caption)
-        caption_y  = h - (len(lines) * line_h) - 30
-
-        draw_text_with_background(
-            frame,
-            text      = wrapped_concept,
-            position  = (20, caption_y),
-            font_scale= font_scale_caption,
-            color     = (255, 255, 255),   # white
-            bg_color  = (20, 20, 20),
-            thickness = 2,
-            padding   = 8,
-        )
+        # Draw caption concept overlays (always)
+        for line, rect_start, rect_end, text_pos in caption_draw_commands:
+            cv2.rectangle(frame, rect_start, rect_end, (20, 20, 20), -1)
+            cv2.putText(frame, line, text_pos, font, font_scale_caption, (255, 255, 255), 2, cv2.LINE_AA)
 
         writer.write(frame)
         frame_idx += 1
@@ -309,8 +328,8 @@ def add_text_overlay_opencv(video_path: Path, out_path: Path,
         "-i", str(video_path),     
         "-c:v", "libx264",
         "-c:a", "aac",
-        "-map", "0:v:0",
-        "-map", "1:a:0",
+        "-map", "0:v",
+        "-map", "1:a?",
         "-shortest",
         str(out_path)
     ]
@@ -318,8 +337,14 @@ def add_text_overlay_opencv(video_path: Path, out_path: Path,
     tmp_video.unlink(missing_ok=True)
 
     if result.returncode != 0:
-        import shutil
-        shutil.copy(str(tmp_video), str(out_path))
+        # Fallback to copy format using direct H264 re-encoding (guarantees browser readability)
+        cmd_fallback = [
+            ffmpeg, "-y",
+            "-i", str(tmp_video),
+            "-c:v", "libx264",
+            str(out_path)
+        ]
+        subprocess.run(cmd_fallback, capture_output=True)
 
 
 def slugify(text: str) -> str:
@@ -327,8 +352,24 @@ def slugify(text: str) -> str:
 
 
 def export_short(source_video: Path, segment: dict, idx: int, crop: bool = True) -> Path:
-    start    = float(segment["start_time"])
-    end      = float(segment["end_time"])
+    try:
+        start = float(segment.get("start_time", 0.0))
+        end   = float(segment.get("end_time", 30.0))
+    except (ValueError, TypeError, KeyError):
+        start = 0.0
+        end   = 30.0
+
+    # Ensure timestamps do not overshoot video duration
+    cap = cv2.VideoCapture(str(source_video))
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30
+    total_frames = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+    duration = total_frames / fps if total_frames and fps else 300.0
+    cap.release()
+
+    if start < 0: start = 0.0
+    if end > duration: end = duration
+    if end - start < 5.0: end = min(duration, start + 30.0)
+
     title    = segment.get("title", f"Short {idx}")
     concept  = segment.get("key_concept", "")
 

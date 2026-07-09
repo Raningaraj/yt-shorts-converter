@@ -245,29 +245,10 @@
 <header>
   <div class="logo">▶</div>
   <h1>YT → <span>Shorts</span> Converter</h1>
-  <button id="settingsBtn" style="margin-left: 20px; background: transparent; border: 1px solid rgba(255,255,255,0.2); color: var(--text); padding: 5px 12px; border-radius: 6px; cursor: pointer; font-size: 0.8rem; display: flex; align-items: center; gap: 6px; transition: background 0.2s;" onclick="toggleSettings()">
-    ⚙️ Setup Backend
-  </button>
   <span class="badge">B.Tech AI · 6th Sem Project</span>
 </header>
 
 <main>
-
-  <!-- Settings Panel -->
-  <div id="settingsPanel" class="card" style="display: none; border-color: var(--purple); margin-bottom: 10px;">
-    <h3 style="font-size: 1.1rem; margin-bottom: 8px;">⚙️ Netlify &rarr; Render Setup</h3>
-    <p style="font-size: 0.85rem; color: var(--muted); margin-bottom: 14px; line-height: 1.4;">
-      Enter your Render backend URL below to connect this frontend to your API:
-    </p>
-    <div class="input-row">
-      <input id="backendUrlInput" class="url-input" type="url"
-             placeholder="https://your-backend.onrender.com" />
-      <button class="btn btn-primary" onclick="saveSettings()">
-        💾 Save
-      </button>
-    </div>
-    <div id="settingsMsg" style="margin-top: 10px; font-size: 0.85rem; line-height: 1.4; display: none;"></div>
-  </div>
 
   
   <div class="hero">
@@ -355,22 +336,13 @@
 </footer>
 
 <script>
-// Retrieve API URL from LocalStorage or fallback to default
+// Retrieve API URL
 function getApiUrl() {
-  const customUrl = localStorage.getItem("YT_SHORTS_BACKEND_URL");
-  if (customUrl) {
-    return customUrl.replace(/\/$/, "") + "/api";
-  }
-  
-  // Local development fallback
   if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
     if (window.location.port && window.location.port !== "80") {
-      // If we are served from port 5000 (Flask), relative works. If from Live Server (e.g. 5500), use port 5000.
       return window.location.port === "5000" ? "/api" : "http://localhost:5000/api";
     }
   }
-  
-  // Default to user's Render backend URL in production
   return "https://yt-shorts-converter-1.onrender.com/api";
 }
 
@@ -378,21 +350,12 @@ let API = getApiUrl();
 
 // Update UI key inputs on load
 window.addEventListener("DOMContentLoaded", () => {
-  const saved = localStorage.getItem("YT_SHORTS_BACKEND_URL");
-  if (saved) {
-    document.getElementById("backendUrlInput").value = saved;
-  } else {
-    document.getElementById("backendUrlInput").value = "https://yt-shorts-converter-1.onrender.com";
-  }
-
   // Load recently converted shorts if they exist in localStorage and are less than 24 hours old
   const savedShortsRaw = localStorage.getItem("LAST_CONVERTED_SHORTS");
   if (savedShortsRaw) {
     try {
       const savedShorts = JSON.parse(savedShortsRaw);
-      // Show immediately if generated in the last 24 hours (before Render server disk gets recycled)
       if (Date.now() - savedShorts.timestamp < 24 * 60 * 60 * 1000) {
-        // Wait minor delay to guarantee DOM is rendered
         setTimeout(() => renderResults(savedShorts.files), 100);
       } else {
         localStorage.removeItem("LAST_CONVERTED_SHORTS");
@@ -403,81 +366,27 @@ window.addEventListener("DOMContentLoaded", () => {
   }
 });
 
-function toggleSettings() {
-  const panel = document.getElementById("settingsPanel");
-  if (panel.style.display === "none") {
-    showSettings();
-  } else {
-    hideSettings();
-  }
-}
-
-function showSettings() {
-  document.getElementById("settingsPanel").style.display = "block";
-}
-
-function hideSettings() {
-  document.getElementById("settingsPanel").style.display = "none";
-}
-
-function saveSettings() {
-  const input = document.getElementById("backendUrlInput").value.trim();
-  const msgEl = document.getElementById("settingsMsg");
-  
-  if (!input) {
-    localStorage.removeItem("YT_SHORTS_BACKEND_URL");
-    API = getApiUrl();
-    msgEl.style.color = "#ffaaaa";
-    msgEl.innerHTML = "Backend URL reset. Using relative path <code>/api</code>";
-    msgEl.style.display = "block";
-    return;
-  }
-  
-  if (!input.startsWith("http://") && !input.startsWith("https://")) {
-    msgEl.style.color = "#ffaaaa";
-    msgEl.textContent = "Please enter a valid URL (starting with http:// or https://)";
-    msgEl.style.display = "block";
-    return;
-  }
-  
-  localStorage.setItem("YT_SHORTS_BACKEND_URL", input);
-  API = getApiUrl();
-  msgEl.style.color = "#5fff9d";
-  msgEl.innerHTML = `Successfully pointed to: <code>${API}</code>`;
-  msgEl.style.display = "block";
-  
-  // Test connection to backend health check
-  healthCheck(API);
-}
-
-async function healthCheck(apiUrl) {
-  const msgEl = document.getElementById("settingsMsg");
-  try {
-    const res = await fetch(`${apiUrl}/health`);
-    const data = await res.json();
-    if (data.status === "ok") {
-      msgEl.innerHTML += "<br>✅ Connection successful! Backend is online.";
-    } else {
-      msgEl.innerHTML += "<br>⚠️ Backend replied, but health check failed.";
-    }
-  } catch (e) {
-    msgEl.innerHTML += "<br>❌ Could not connect to backend. Make sure it's running and CORS is enabled.";
-    msgEl.style.color = "#ffaaaa";
-  }
-}
-
 let pollTimer = null;
 
 async function startConversion() {
+  const btn = document.getElementById("convertBtn");
+  if (btn.disabled) return;
+
   const url = document.getElementById("urlInput").value.trim();
   if (!url) { alert("Please enter a YouTube URL."); return; }
+
+  // Lock input elements
+  document.getElementById("urlInput").disabled = true;
+  document.getElementById("cropCheck").disabled = true;
+  document.getElementById("captionCheck").disabled = true;
+  btn.disabled = true;
+  btn.innerHTML = "⏳ Generating...";
 
   // Reset UI
   hide("results-section"); hide("error-section");
   show("progress-section");
   setStep(1);
   setProgress(5, "Sending request to server…");
-  document.getElementById("convertBtn").disabled = true;
 
   try {
     const res = await fetch(`${API}/convert`, {
@@ -565,7 +474,13 @@ function renderResults(files) {
     grid.appendChild(card);
   });
 
-  document.getElementById("convertBtn").disabled = false;
+  // Re-enable input elements
+  document.getElementById("urlInput").disabled = false;
+  document.getElementById("cropCheck").disabled = false;
+  document.getElementById("captionCheck").disabled = false;
+  const btn = document.getElementById("convertBtn");
+  btn.disabled = false;
+  btn.innerHTML = "⚡ Convert";
 }
 
 function downloadShort(filename) {
@@ -603,7 +518,14 @@ function showError(msg) {
   hide("progress-section");
   show("error-section");
   document.getElementById("errorMsg").textContent = msg;
-  document.getElementById("convertBtn").disabled = false;
+  
+  // Re-enable input elements
+  document.getElementById("urlInput").disabled = false;
+  document.getElementById("cropCheck").disabled = false;
+  document.getElementById("captionCheck").disabled = false;
+  const btn = document.getElementById("convertBtn");
+  btn.disabled = false;
+  btn.innerHTML = "⚡ Convert";
 }
 
 function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
