@@ -548,12 +548,7 @@ function renderResults(files, savedTo = null) {
 }
 
 function downloadShort(filename) {
-  const link = document.createElement("a");
-  link.href = `${API}/download/${encodeURIComponent(filename)}`;
-  link.setAttribute("download", filename);
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
+  window.location.href = `${API}/download/${encodeURIComponent(filename)}`;
 }
 
 function clearHistory() {
