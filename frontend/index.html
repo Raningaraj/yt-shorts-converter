@@ -274,6 +274,7 @@
         📁 Browse...
       </button>
     </div>
+    <div id="localWarning" style="margin-top: 8px; font-size: 0.8rem; display: none; line-height: 1.4;"></div>
 
     <div class="options-row">
       <label><input type="checkbox" id="cropCheck" checked> Crop to 9:16 vertical</label>
@@ -321,10 +322,10 @@
           📦 Download All (ZIP)
         </button>
       </div>
-      <p style="font-size: 0.85rem; color: var(--muted); line-height: 1.4; margin: 0;">
+      <p id="exportLabelText" style="font-size: 0.85rem; color: var(--muted); line-height: 1.4; margin: 0;">
         Export all generated MP4 shorts to a custom folder on your computer:
       </p>
-      <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+      <div id="exportActionRow" style="display: flex; gap: 10px; flex-wrap: wrap;">
         <input id="exportPathInput" class="url-input" type="text"
                placeholder="Local Save Folder (e.g. C:\Users\ranin\Downloads)" style="flex: 1; padding: 10px 14px; font-size: 0.9rem;" />
         <button id="exportBrowseBtn" class="btn" style="background: rgba(255,255,255,0.05); color: var(--text); border: 1.5px solid rgba(255,255,255,0.12); padding: 10px 16px; font-size: 0.9rem;" onclick="browseExportDirectory()">
@@ -376,16 +377,66 @@
 
 <script>
 // Retrieve API URL
+// Check if hostname is local
+function isLocalHost(hn) {
+  return hn === "localhost" || 
+         hn === "127.0.0.1" || 
+         hn.startsWith("192.168.") || 
+         hn.startsWith("10.") || 
+         hn.startsWith("172.16.") || 
+         hn.startsWith("172.17.") || 
+         hn.startsWith("172.18.") || 
+         hn.startsWith("172.19.") || 
+         hn.startsWith("172.2") || 
+         hn.startsWith("172.3") || 
+         hn === "[::1]" || 
+         hn === "";
+}
+
+// Retrieve API URL
 function getApiUrl() {
-  if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
-    if (window.location.port && window.location.port !== "80") {
-      return window.location.port === "5000" ? "/api" : "http://localhost:5000/api";
+  const hn = window.location.hostname;
+  const port = window.location.port;
+
+  if (isLocalHost(hn)) {
+    if (port === "5000") {
+      return "/api";
     }
+    const host = hn || "localhost";
+    return `http://${host}:5000/api`;
   }
   return "https://yt-shorts-converter-1.onrender.com/api";
 }
 
 let API = getApiUrl();
+
+function updateLocalSaveUI() {
+  const isLocal = isLocalHost(window.location.hostname);
+  const localWarning = document.getElementById("localWarning");
+  const pathInput = document.getElementById("downloadPathInput");
+  const browseBtn = document.getElementById("browseBtn");
+  
+  if (!isLocal) {
+    pathInput.disabled = true;
+    pathInput.value = "";
+    pathInput.placeholder = "Local saving disabled in Cloud mode";
+    browseBtn.disabled = true;
+    localWarning.style.display = "block";
+    localWarning.style.color = "var(--muted)";
+    localWarning.innerHTML = "ℹ️ Running on cloud server. Direct folder saving is disabled. Use the ZIP download or individual downloads below.";
+    
+    const exportActionRow = document.getElementById("exportActionRow");
+    if (exportActionRow) exportActionRow.style.display = "none";
+    const exportLabelText = document.getElementById("exportLabelText");
+    if (exportLabelText) exportLabelText.innerHTML = "ℹ️ Running on cloud server. Direct folder export is disabled. Use the ZIP download above instead.";
+  } else {
+    localWarning.style.display = "none";
+    const exportActionRow = document.getElementById("exportActionRow");
+    if (exportActionRow) exportActionRow.style.display = "flex";
+    const exportLabelText = document.getElementById("exportLabelText");
+    if (exportLabelText) exportLabelText.textContent = "Export all generated MP4 shorts to a custom folder on your computer:";
+  }
+}
 
 // Update UI key inputs on load
 window.addEventListener("DOMContentLoaded", () => {
@@ -394,6 +445,8 @@ window.addEventListener("DOMContentLoaded", () => {
   if (savedPath) {
     document.getElementById("downloadPathInput").value = savedPath;
   }
+  
+  updateLocalSaveUI();
 
   // Load recently converted shorts if they exist in localStorage and are less than 24 hours old
   const savedShortsRaw = localStorage.getItem("LAST_CONVERTED_SHORTS");
@@ -533,8 +586,13 @@ function renderResults(files, savedTo = null) {
   
   const notice = document.getElementById("folderSaveNotice");
   if (savedTo) {
-    document.getElementById("localSavedPath").textContent = savedTo;
-    notice.style.display = "block";
+    const isLocal = isLocalHost(window.location.hostname);
+    if (isLocal) {
+      document.getElementById("localSavedPath").textContent = savedTo;
+      notice.style.display = "block";
+    } else {
+      notice.style.display = "none";
+    }
   } else {
     notice.style.display = "none";
   }
@@ -572,10 +630,9 @@ function renderResults(files, savedTo = null) {
 
   // Re-enable input elements
   document.getElementById("urlInput").disabled = false;
-  document.getElementById("downloadPathInput").disabled = false;
-  document.getElementById("browseBtn").disabled = false;
   document.getElementById("cropCheck").disabled = false;
   document.getElementById("captionCheck").disabled = false;
+  updateLocalSaveUI();
   const btn = document.getElementById("convertBtn");
   btn.disabled = false;
   btn.innerHTML = "⚡ Convert";
@@ -753,10 +810,9 @@ function showError(msg) {
   
   // Re-enable input elements
   document.getElementById("urlInput").disabled = false;
-  document.getElementById("downloadPathInput").disabled = false;
-  document.getElementById("browseBtn").disabled = false;
   document.getElementById("cropCheck").disabled = false;
   document.getElementById("captionCheck").disabled = false;
+  updateLocalSaveUI();
   const btn = document.getElementById("convertBtn");
   btn.disabled = false;
   btn.innerHTML = "⚡ Convert";
