@@ -430,6 +430,9 @@ function updateLocalSaveUI() {
     const exportLabelText = document.getElementById("exportLabelText");
     if (exportLabelText) exportLabelText.innerHTML = "ℹ️ Running on cloud server. Direct folder export is disabled. Use the ZIP download above instead.";
   } else {
+    pathInput.disabled = false;
+    pathInput.placeholder = "Local Save Folder (Optional, e.g. C:\\Users\\ranin\\Downloads)";
+    browseBtn.disabled = false;
     localWarning.style.display = "none";
     const exportActionRow = document.getElementById("exportActionRow");
     if (exportActionRow) exportActionRow.style.display = "flex";
