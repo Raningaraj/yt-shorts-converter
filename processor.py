@@ -53,6 +53,28 @@ def fetch_free_proxies():
         return []
 
 
+def get_cookiefile_path():
+    """
+    Check if a cookies.txt file exists in the directory, or if a YOUTUBE_COOKIES
+    environment variable is set containing Netscape cookie file content.
+    Returns (path_str, is_temp).
+    """
+    # 1. Check if cookies.txt exists in the backend directory
+    root_cookies = BACKEND_DIR / "cookies.txt"
+    if root_cookies.exists():
+        return str(root_cookies), False
+
+    # 2. Check if YOUTUBE_COOKIES env var is defined
+    cookies_content = os.environ.get("YOUTUBE_COOKIES", "").strip()
+    if cookies_content:
+        fd, temp_path = tempfile.mkstemp(suffix=".txt", prefix="cookies_")
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            f.write(cookies_content)
+        return temp_path, True
+
+    return None, False
+
+
 def download_video(url: str):
     # Convert standard YouTube link to embed format to reduce bot checking
     video_id = None
@@ -67,6 +89,11 @@ def download_video(url: str):
         url = f"https://www.youtube.com/embed/{video_id}"
         print(f"Downloading via iframe embed URL: {url}")
 
+    # Fetch cookiefile if configured (helps bypass login/bot restrictions)
+    cookie_path, is_temp = get_cookiefile_path()
+    if cookie_path:
+        print(f"Using cookies from: {cookie_path if not is_temp else 'YOUTUBE_COOKIES env variable'}")
+
     # Fetch a list of working proxies
     print("Fetching free proxy list to bypass datacenter IP restrictions...")
     proxies = fetch_free_proxies()
@@ -75,47 +102,58 @@ def download_video(url: str):
     # Always try direct download first (no proxy)
     attempts = [None] + proxies[:15]
 
-    for i, proxy in enumerate(attempts):
-        ydl_opts = {
-            "format": "bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4]",
-            "outtmpl": str(DOWNLOAD_DIR / "%(id)s.%(ext)s"),
-            "merge_output_format": "mp4",
-            "quiet": True,
-            "no_warnings": True,
-            "extractor_args": {
-                "youtube": {
-                    "player_client": ["tv", "web_embedded"]
+    try:
+        for i, proxy in enumerate(attempts):
+            ydl_opts = {
+                "format": "bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4]",
+                "outtmpl": str(DOWNLOAD_DIR / "%(id)s.%(ext)s"),
+                "merge_output_format": "mp4",
+                "quiet": True,
+                "no_warnings": True,
+                "extractor_args": {
+                    "youtube": {
+                        "player_client": ["ios", "android", "tv", "web_embedded"]
+                    }
                 }
             }
-        }
-        if proxy:
-            ydl_opts["proxy"] = f"http://{proxy}"
-            print(f"[Attempt {i}] Downloading via proxy: {proxy}...")
-        else:
-            print(f"[Attempt {i}] Downloading directly (no proxy)...")
+            if cookie_path:
+                ydl_opts["cookiefile"] = cookie_path
 
-        try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info     = ydl.extract_info(url, download=True)
-                video_id = info["id"]
-                title    = info.get("title", "video")
-                
-                expected_path = Path(ydl.prepare_filename(info))
-                if not expected_path.exists():
-                    for f in DOWNLOAD_DIR.glob(f"{video_id}.*"):
-                        if f.suffix in [".mp4", ".mkv", ".webm", ".avi"]:
-                            expected_path = f
-                            break
-                print(f"Downloaded: '{title}' to {expected_path.name}")
-                return expected_path, title
-        except Exception as e:
-            err_str = str(e)
-            print(f"[Attempt {i}] Failed: {err_str[:150]}")
-            if i < len(attempts) - 1:
-                print("Skipping to next attempt...")
-                continue
+            if proxy:
+                ydl_opts["proxy"] = f"http://{proxy}"
+                print(f"[Attempt {i}] Downloading via proxy: {proxy}...")
             else:
-                raise e
+                print(f"[Attempt {i}] Downloading directly (no proxy)...")
+
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info     = ydl.extract_info(url, download=True)
+                    video_id = info["id"]
+                    title    = info.get("title", "video")
+                    
+                    expected_path = Path(ydl.prepare_filename(info))
+                    if not expected_path.exists():
+                        for f in DOWNLOAD_DIR.glob(f"{video_id}.*"):
+                            if f.suffix in [".mp4", ".mkv", ".webm", ".avi"]:
+                                expected_path = f
+                                break
+                    print(f"Downloaded: '{title}' to {expected_path.name}")
+                    return expected_path, title
+            except Exception as e:
+                err_str = str(e)
+                print(f"[Attempt {i}] Failed: {err_str[:150]}")
+                if i < len(attempts) - 1:
+                    print("Skipping to next attempt...")
+                    continue
+                else:
+                    raise e
+    finally:
+        # Clean up temporary cookie file if created
+        if is_temp and cookie_path and os.path.exists(cookie_path):
+            try:
+                os.unlink(cookie_path)
+            except Exception:
+                pass
 
     raise RuntimeError("Failed to download YouTube video after trying direct and proxy attempts.")
 

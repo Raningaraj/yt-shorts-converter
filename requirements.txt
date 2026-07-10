@@ -1,5 +1,5 @@
 # YT Shorts Converter — Optimized Render Backend Requirements
-yt-dlp>=2024.1.1
+yt-dlp
 groq>=0.5.0
 imageio-ffmpeg>=0.4.9
 opencv-python-headless>=4.8.0
