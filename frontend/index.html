@@ -310,6 +310,33 @@
     <div id="folderSaveNotice" style="display: none; background: rgba(95, 255, 157, 0.1); border: 1px solid rgba(95, 255, 157, 0.3); border-radius: var(--radius); padding: 14px 18px; margin-bottom: 20px; font-size: 0.95rem; color: #5fff9d; word-break: break-all;">
        <strong>💾 Saved Locally:</strong> Your shorts have been saved directly to <span id="localSavedPath" style="font-family: monospace; background: rgba(0,0,0,0.3); padding: 2px 8px; margin-left: 6px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1);"></span>
     </div>
+
+    <!-- Export & Save Options Panel -->
+    <div id="exportPanel" class="card" style="background: rgba(255,255,255,0.02); border: 1.5px dashed rgba(255,255,255,0.12); margin-bottom: 20px; display: flex; flex-direction: column; gap: 14px; padding: 20px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+        <h4 style="font-size: 1.05rem; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 8px; margin: 0;">
+          📥 Export & Save Options
+        </h4>
+        <button class="btn" style="background: linear-gradient(135deg, var(--purple), var(--accent)); padding: 8px 16px; font-size: 0.85rem; color: white;" onclick="exportAllAsZip()">
+          📦 Download All (ZIP)
+        </button>
+      </div>
+      <p style="font-size: 0.85rem; color: var(--muted); line-height: 1.4; margin: 0;">
+        Export all generated MP4 shorts to a custom folder on your computer:
+      </p>
+      <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+        <input id="exportPathInput" class="url-input" type="text"
+               placeholder="Local Save Folder (e.g. C:\Users\ranin\Downloads)" style="flex: 1; padding: 10px 14px; font-size: 0.9rem;" />
+        <button id="exportBrowseBtn" class="btn" style="background: rgba(255,255,255,0.05); color: var(--text); border: 1.5px solid rgba(255,255,255,0.12); padding: 10px 16px; font-size: 0.9rem;" onclick="browseExportDirectory()">
+          📁 Browse...
+        </button>
+        <button id="exportLocalBtn" class="btn btn-primary" style="padding: 10px 20px; font-size: 0.9rem; font-weight: 700;" onclick="exportToLocalPath()">
+          💾 Export to Path
+        </button>
+      </div>
+      <div id="exportStatus" style="display: none; padding: 12px; border-radius: 8px; font-size: 0.88rem; line-height: 1.4; margin-top: 4px;"></div>
+    </div>
+
     <div class="shorts-grid" id="shortsGrid"></div>
   </div>
 
@@ -496,8 +523,10 @@ function pollJob(jobId) {
 }
 
 const emojis = ["📐","💡","🔬","📊","⚙️","🧮","🔑","📝","🧪","🎯"];
+let currentFilesList = [];
 
 function renderResults(files, savedTo = null) {
+  currentFilesList = files;
   hide("progress-section");
   show("results-section");
   document.getElementById("resultCount").textContent = `${files.length} Shorts`;
@@ -509,6 +538,11 @@ function renderResults(files, savedTo = null) {
   } else {
     notice.style.display = "none";
   }
+
+  // Pre-fill the export path input with standard download path choice
+  const defaultPath = document.getElementById("downloadPathInput").value.trim() || localStorage.getItem("YT_SHORTS_DOWNLOAD_PATH") || "";
+  document.getElementById("exportPathInput").value = defaultPath;
+  hide("exportStatus");
 
   const grid = document.getElementById("shortsGrid");
   grid.innerHTML = "";
@@ -547,12 +581,151 @@ function renderResults(files, savedTo = null) {
   btn.innerHTML = "⚡ Convert";
 }
 
-function downloadShort(filename) {
-  window.location.href = `${API}/download/${encodeURIComponent(filename)}`;
+async function downloadShort(filename) {
+  try {
+    const url = `${API}/download/${encodeURIComponent(filename)}`;
+    const response = await fetch(url);
+    if (!response.ok) throw new Error("Failed to download file.");
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = objectUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(objectUrl);
+  } catch (e) {
+    console.error(e);
+    // fallback if blob download fails
+    window.location.href = `${API}/download/${encodeURIComponent(filename)}`;
+  }
+}
+
+async function browseExportDirectory() {
+  const btn = document.getElementById("exportBrowseBtn");
+  const input = document.getElementById("exportPathInput");
+  const originalHtml = btn.innerHTML;
+  
+  btn.disabled = true;
+  btn.innerHTML = "⌛...";
+  
+  try {
+    const res = await fetch(`${API}/select-directory`);
+    if (!res.ok) throw new Error("Could not contact server to open folder picker.");
+    const data = await res.json();
+    if (data.directory) {
+      input.value = data.directory;
+    }
+  } catch (e) {
+    alert("Could not select folder automatically. Please paste the path manually.");
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = originalHtml;
+  }
+}
+
+async function exportToLocalPath() {
+  const path = document.getElementById("exportPathInput").value.trim();
+  if (!path) {
+    alert("Please specify or browse for a destination path first.");
+    return;
+  }
+  if (!currentFilesList || currentFilesList.length === 0) {
+    alert("No files available to export.");
+    return;
+  }
+  
+  const btn = document.getElementById("exportLocalBtn");
+  const statusDiv = document.getElementById("exportStatus");
+  const originalText = btn.textContent;
+  
+  btn.disabled = true;
+  btn.textContent = "Saving...";
+  statusDiv.style.display = "none";
+  
+  try {
+    const res = await fetch(`${API}/export`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        files: currentFilesList,
+        download_path: path
+      })
+    });
+    
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Export failed");
+    
+    // Save selection
+    localStorage.setItem("YT_SHORTS_DOWNLOAD_PATH", path);
+    // Update main page input path too
+    document.getElementById("downloadPathInput").value = path;
+    
+    statusDiv.style.display = "block";
+    statusDiv.style.color = "#5fff9d";
+    statusDiv.style.background = "rgba(95,255,157,0.08)";
+    statusDiv.style.borderColor = "rgba(95,255,157,0.2)";
+    statusDiv.textContent = `✅ Successfully exported ${data.copied} MP4 files to: ${data.saved_to}`;
+  } catch (e) {
+    statusDiv.style.display = "block";
+    statusDiv.style.color = "#ffaaaa";
+    statusDiv.style.background = "rgba(233,69,96,0.1)";
+    statusDiv.style.borderColor = "var(--accent)";
+    statusDiv.textContent = `❌ Export error: ${e.message}`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalText;
+  }
+}
+
+async function exportAllAsZip() {
+  if (!currentFilesList || currentFilesList.length === 0) {
+    alert("No files available to export.");
+    return;
+  }
+  
+  const statusDiv = document.getElementById("exportStatus");
+  statusDiv.style.display = "block";
+  statusDiv.style.color = "#c4a8ff";
+  statusDiv.style.background = "rgba(83,52,131,0.15)";
+  statusDiv.style.borderColor = "var(--purple)";
+  statusDiv.textContent = "📦 Zipping MP4 files and preparing download... Please wait.";
+  
+  try {
+    const res = await fetch(`${API}/download-zip`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ files: currentFilesList })
+    });
+    
+    if (!res.ok) {
+      const data = await res.json();
+      throw new Error(data.error || "Failed to generate ZIP");
+    }
+    
+    const blob = await res.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = objectUrl;
+    a.download = "generated_shorts_mp4.zip";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(objectUrl);
+    
+    statusDiv.textContent = "✅ ZIP download started successfully!";
+  } catch (e) {
+    statusDiv.style.color = "#ffaaaa";
+    statusDiv.style.background = "rgba(233,69,96,0.1)";
+    statusDiv.style.borderColor = "var(--accent)";
+    statusDiv.textContent = `❌ ZIP creation error: ${e.message}`;
+  }
 }
 
 function clearHistory() {
   localStorage.removeItem("LAST_CONVERTED_SHORTS");
+  currentFilesList = [];
   hide("results-section");
   document.getElementById("shortsGrid").innerHTML = "";
 }
@@ -590,6 +763,15 @@ function showError(msg) {
 }
 
 function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+
+// Test hook: query param ?test=true will mock completed shorts results
+if (new URLSearchParams(window.location.search).get("test") === "true") {
+  localStorage.setItem("LAST_CONVERTED_SHORTS", JSON.stringify({
+    files: ["short_01_getting_started_with_ai.mp4", "short_02_writing_the_first_script.mp4", "short_03_compiling_successfully.mp4"],
+    timestamp: Date.now(),
+    saved_to: "C:\\Users\\ranin\\Downloads"
+  }));
+}
 </script>
 </body>
 </html>

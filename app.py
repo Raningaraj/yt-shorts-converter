@@ -137,6 +137,79 @@ def download_short(filename: str):
     return send_file(str(file_path), mimetype="video/mp4", as_attachment=True)
 
 
+@app.route("/api/export", methods=["POST"])
+def export_shorts():
+    """
+    Body JSON: { "files": ["filename1.mp4", "filename2.mp4"], "download_path": "..." }
+    Returns:   { "status": "success", "copied": N, "saved_to": "..." }
+    """
+    data = request.get_json(force=True)
+    files = data.get("files", [])
+    download_path = data.get("download_path", "").strip()
+    
+    if not files:
+        return jsonify({"error": "No files specified to export"}), 400
+    if not download_path:
+        return jsonify({"error": "Export path is required"}), 400
+        
+    p = Path(download_path)
+    try:
+        p.mkdir(parents=True, exist_ok=True)
+    except Exception as e:
+        return jsonify({"error": f"Invalid export path: {str(e)}"}), 400
+        
+    if not p.is_dir():
+        return jsonify({"error": "Export path must be a directory"}), 400
+        
+    imported_files = []
+    import shutil
+    for filename in files:
+        safe_name = Path(filename).name
+        src_file = OUTPUT_DIR / safe_name
+        dest_file = p / safe_name
+        if src_file.exists():
+            try:
+                shutil.copy2(src_file, dest_file)
+                imported_files.append(safe_name)
+            except Exception as e:
+                return jsonify({"error": f"Failed to copy {safe_name}: {str(e)}"}), 500
+        else:
+            return jsonify({"error": f"File {safe_name} not found on server"}), 404
+            
+    return jsonify({"status": "success", "copied": len(imported_files), "saved_to": str(p)})
+
+
+@app.route("/api/download-zip", methods=["POST"])
+def download_zip():
+    """
+    Body JSON: { "files": ["filename1.mp4", "filename2.mp4"] }
+    Returns:   Zip file stream
+    """
+    import io
+    import zipfile
+    data = request.get_json(force=True)
+    files = data.get("files", [])
+    if not files:
+        return jsonify({"error": "No files specified"}), 400
+        
+    memory_file = io.BytesIO()
+    with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+        for filename in files:
+            safe_name = Path(filename).name
+            file_path = OUTPUT_DIR / safe_name
+            if file_path.exists():
+                zip_file.write(str(file_path), arcname=safe_name)
+                
+    memory_file.seek(0)
+    return send_file(
+        memory_file,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name="generated_shorts.zip"
+    )
+
+
+
 @app.route("/")
 def index():
     """Serve the frontend index.html"""
