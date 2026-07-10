@@ -19,13 +19,26 @@ CORS(app, expose_headers=["Content-Disposition"])
 jobs: dict[str, dict] = {}
 
 
-def run_job(job_id: str, url: str, crop: bool):
+def run_job(job_id: str, url: str, crop: bool, download_path: str = ""):
     try:
         jobs[job_id]["status"] = "processing"
         print(f"[Job {job_id}] Starting conversion for: {url}")
         paths = convert(url, crop_to_vert=crop)
+        
+        # If custom download_path is provided, copy/move completed shorts there!
+        if download_path:
+            import shutil
+            dest_dir = Path(download_path)
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            print(f"[Job {job_id}] Copying files to custom download path: {download_path}")
+            for p in paths:
+                orig_file = Path(p)
+                dest_file = dest_dir / orig_file.name
+                shutil.copy2(orig_file, dest_file)
+                
         jobs[job_id]["status"] = "done"
         jobs[job_id]["files"] = [Path(p).name for p in paths]
+        jobs[job_id]["saved_to"] = download_path if download_path else None
         print(f"[Job {job_id}] Completed! Generated {len(paths)} shorts")
     except Exception as e:
         print(f"[Job {job_id}] ERROR: {str(e)}")
@@ -33,10 +46,42 @@ def run_job(job_id: str, url: str, crop: bool):
         jobs[job_id]["error"] = str(e)
 
 
+@app.route("/api/select-directory")
+def select_directory():
+    """Trigger a native directory selector dialog via a subprocess."""
+    import subprocess
+    import sys
+    
+    code = """
+import tkinter as tk
+from tkinter import filedialog
+root = tk.Tk()
+root.withdraw()
+root.attributes('-topmost', True)
+path = filedialog.askdirectory(title="Select Save Directory")
+root.destroy()
+print(path)
+"""
+    try:
+        # Run subprocess to avoid tkinter blocking the Flask main loop or thread restrictions
+        res = subprocess.run(
+            [sys.executable, "-c", code],
+            capture_output=True,
+            text=True,
+            timeout=120
+        )
+        if res.returncode == 0:
+            selected_path = res.stdout.strip()
+            return jsonify({"directory": selected_path})
+        return jsonify({"directory": "", "error": res.stderr})
+    except Exception as e:
+        return jsonify({"directory": "", "error": str(e)}), 500
+
+
 @app.route("/api/convert", methods=["POST"])
 def start_conversion():
     """
-    Body JSON: { "url": "<youtube_url>", "crop": true }
+    Body JSON: { "url": "<youtube_url>", "crop": true, "download_path": "..." }
     Returns:   { "job_id": "..." }
     """
     data = request.get_json(force=True)
@@ -45,10 +90,22 @@ def start_conversion():
         return jsonify({"error": "url is required"}), 400
 
     crop = bool(data.get("crop", True))
-    job_id = str(uuid.uuid4())
-    jobs[job_id] = {"status": "queued", "files": [], "error": None}
+    download_path = data.get("download_path", "").strip()
+    
+    if download_path:
+        p = Path(download_path)
+        if not p.exists():
+            try:
+                p.mkdir(parents=True, exist_ok=True)
+            except Exception as e:
+                return jsonify({"error": f"Invalid download path: {str(e)}"}), 400
+        elif not p.is_dir():
+            return jsonify({"error": "Download path must be a directory"}), 400
 
-    t = threading.Thread(target=run_job, args=(job_id, url, crop), daemon=True)
+    job_id = str(uuid.uuid4())
+    jobs[job_id] = {"status": "queued", "files": [], "error": None, "saved_to": None}
+
+    t = threading.Thread(target=run_job, args=(job_id, url, crop, download_path), daemon=True)
     t.start()
 
     return jsonify({"job_id": job_id}), 202
@@ -65,6 +122,7 @@ def job_status(job_id: str):
         "status": job["status"],      # queued | processing | done | error
         "files": [Path(f).name for f in job.get("files", [])],
         "error": job.get("error"),
+        "saved_to": job.get("saved_to"),
     }
     return jsonify(resp)
 

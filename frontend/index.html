@@ -266,6 +266,15 @@
         ⚡ Convert
       </button>
     </div>
+    
+    <div class="input-row" style="margin-top: 14px;">
+      <input id="downloadPathInput" class="url-input" type="text"
+             placeholder="Local Save Folder (Optional, e.g. C:\Users\ranin\Downloads)" style="flex: 1;" />
+      <button id="browseBtn" class="btn" style="background: rgba(255,255,255,0.05); color: var(--text); border: 1.5px solid rgba(255,255,255,0.12);" onclick="browseDirectory()">
+        📁 Browse...
+      </button>
+    </div>
+
     <div class="options-row">
       <label><input type="checkbox" id="cropCheck" checked> Crop to 9:16 vertical</label>
       <label><input type="checkbox" id="captionCheck" checked> Key-concept captions</label>
@@ -297,6 +306,9 @@
         <span class="count" id="resultCount">0 Shorts</span>
         <button class="btn" style="padding: 6px 12px; font-size: 0.75rem; font-weight: bold; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); color: var(--text); border-radius: 8px; cursor: pointer; transition: background 0.15s;" onclick="clearHistory()">Clear History</button>
       </div>
+    </div>
+    <div id="folderSaveNotice" style="display: none; background: rgba(95, 255, 157, 0.1); border: 1px solid rgba(95, 255, 157, 0.3); border-radius: var(--radius); padding: 14px 18px; margin-bottom: 20px; font-size: 0.95rem; color: #5fff9d; word-break: break-all;">
+       <strong>💾 Saved Locally:</strong> Your shorts have been saved directly to <span id="localSavedPath" style="font-family: monospace; background: rgba(0,0,0,0.3); padding: 2px 8px; margin-left: 6px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1);"></span>
     </div>
     <div class="shorts-grid" id="shortsGrid"></div>
   </div>
@@ -350,13 +362,19 @@ let API = getApiUrl();
 
 // Update UI key inputs on load
 window.addEventListener("DOMContentLoaded", () => {
+  // Load saved local save path
+  const savedPath = localStorage.getItem("YT_SHORTS_DOWNLOAD_PATH");
+  if (savedPath) {
+    document.getElementById("downloadPathInput").value = savedPath;
+  }
+
   // Load recently converted shorts if they exist in localStorage and are less than 24 hours old
   const savedShortsRaw = localStorage.getItem("LAST_CONVERTED_SHORTS");
   if (savedShortsRaw) {
     try {
       const savedShorts = JSON.parse(savedShortsRaw);
       if (Date.now() - savedShorts.timestamp < 24 * 60 * 60 * 1000) {
-        setTimeout(() => renderResults(savedShorts.files), 100);
+        setTimeout(() => renderResults(savedShorts.files, savedShorts.saved_to), 100);
       } else {
         localStorage.removeItem("LAST_CONVERTED_SHORTS");
       }
@@ -368,6 +386,29 @@ window.addEventListener("DOMContentLoaded", () => {
 
 let pollTimer = null;
 
+async function browseDirectory() {
+  const btn = document.getElementById("browseBtn");
+  const input = document.getElementById("downloadPathInput");
+  const originalHtml = btn.innerHTML;
+  
+  btn.disabled = true;
+  btn.innerHTML = "⌛ Picking...";
+  
+  try {
+    const res = await fetch(`${API}/select-directory`);
+    if (!res.ok) throw new Error("Could not contact server to open folder picker.");
+    const data = await res.json();
+    if (data.directory) {
+      input.value = data.directory;
+    }
+  } catch (e) {
+    alert("Could not select folder automatically. Please paste the path manually.");
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = originalHtml;
+  }
+}
+
 async function startConversion() {
   const btn = document.getElementById("convertBtn");
   if (btn.disabled) return;
@@ -375,8 +416,19 @@ async function startConversion() {
   const url = document.getElementById("urlInput").value.trim();
   if (!url) { alert("Please enter a YouTube URL."); return; }
 
+  const downloadPath = document.getElementById("downloadPathInput").value.trim();
+
+  // Save the download path selection
+  if (downloadPath) {
+    localStorage.setItem("YT_SHORTS_DOWNLOAD_PATH", downloadPath);
+  } else {
+    localStorage.removeItem("YT_SHORTS_DOWNLOAD_PATH");
+  }
+
   // Lock input elements
   document.getElementById("urlInput").disabled = true;
+  document.getElementById("downloadPathInput").disabled = true;
+  document.getElementById("browseBtn").disabled = true;
   document.getElementById("cropCheck").disabled = true;
   document.getElementById("captionCheck").disabled = true;
   btn.disabled = true;
@@ -394,7 +446,8 @@ async function startConversion() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         url,
-        crop: document.getElementById("cropCheck").checked
+        crop: document.getElementById("cropCheck").checked,
+        download_path: downloadPath
       })
     });
     const data = await res.json();
@@ -413,7 +466,6 @@ function pollJob(jobId) {
       const res  = await fetch(`${API}/status/${jobId}`);
       const data = await res.json();
 
-      
       if (tick < 5)  { setStep(1); setProgress(15, "Downloading video from YouTube…"); }
       else if (tick < 20) { setStep(2); setProgress(30 + tick, "Transcribing with Whisper…"); }
       else if (tick < 30) { setStep(3); setProgress(60 + tick * 0.5, "AI analyzing key moments…"); }
@@ -427,10 +479,11 @@ function pollJob(jobId) {
         // Save to browser LocalStorage
         localStorage.setItem("LAST_CONVERTED_SHORTS", JSON.stringify({
           files: data.files,
-          timestamp: Date.now()
+          timestamp: Date.now(),
+          saved_to: data.saved_to
         }));
 
-        setTimeout(() => renderResults(data.files), 600);
+        setTimeout(() => renderResults(data.files, data.saved_to), 600);
       } else if (data.status === "error") {
         clearInterval(pollTimer);
         showError(data.error);
@@ -444,10 +497,19 @@ function pollJob(jobId) {
 
 const emojis = ["📐","💡","🔬","📊","⚙️","🧮","🔑","📝","🧪","🎯"];
 
-function renderResults(files) {
+function renderResults(files, savedTo = null) {
   hide("progress-section");
   show("results-section");
   document.getElementById("resultCount").textContent = `${files.length} Shorts`;
+  
+  const notice = document.getElementById("folderSaveNotice");
+  if (savedTo) {
+    document.getElementById("localSavedPath").textContent = savedTo;
+    notice.style.display = "block";
+  } else {
+    notice.style.display = "none";
+  }
+
   const grid = document.getElementById("shortsGrid");
   grid.innerHTML = "";
 
@@ -476,6 +538,8 @@ function renderResults(files) {
 
   // Re-enable input elements
   document.getElementById("urlInput").disabled = false;
+  document.getElementById("downloadPathInput").disabled = false;
+  document.getElementById("browseBtn").disabled = false;
   document.getElementById("cropCheck").disabled = false;
   document.getElementById("captionCheck").disabled = false;
   const btn = document.getElementById("convertBtn");
@@ -521,6 +585,8 @@ function showError(msg) {
   
   // Re-enable input elements
   document.getElementById("urlInput").disabled = false;
+  document.getElementById("downloadPathInput").disabled = false;
+  document.getElementById("browseBtn").disabled = false;
   document.getElementById("cropCheck").disabled = false;
   document.getElementById("captionCheck").disabled = false;
   const btn = document.getElementById("convertBtn");
