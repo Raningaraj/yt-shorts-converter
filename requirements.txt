@@ -8,3 +8,5 @@ flask-cors>=4.0.0
 python-dotenv>=1.0.0
 numpy>=1.24.0
 gunicorn>=21.2.0
+curl_cffi>=0.7.0
+pytubefix>=6.0.0

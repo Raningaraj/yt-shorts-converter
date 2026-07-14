@@ -64,132 +64,207 @@ def get_cookiefile_path():
     return None, False
 
 
+def _extract_video_id(url: str):
+    """Pull the YouTube video ID from any YouTube URL format."""
+    if "youtu.be/" in url:
+        return url.split("youtu.be/")[-1].split("?")[0].split("&")[0]
+    if "watch?v=" in url:
+        return url.split("watch?v=")[-1].split("&")[0]
+    if "embed/" in url:
+        return url.split("embed/")[-1].split("?")[0]
+    if "shorts/" in url:
+        return url.split("shorts/")[-1].split("?")[0]
+    return None
+
+
+def _find_downloaded_file(ydl, info, vid_id: str) -> Path:
+    """Locate the actual downloaded file regardless of container."""
+    expected = Path(ydl.prepare_filename(info))
+    if expected.exists():
+        return expected
+    for ext in [".mp4", ".mkv", ".webm", ".avi", ".m4v"]:
+        candidate = expected.with_suffix(ext)
+        if candidate.exists():
+            return candidate
+    for f in DOWNLOAD_DIR.glob(f"{vid_id}.*"):
+        if f.suffix in [".mp4", ".mkv", ".webm", ".avi", ".m4v"]:
+            return f
+    return expected
+
+
+def _fetch_proxies(limit: int = 30) -> list:
+    """Fetch proxies from multiple free sources, return up to `limit` entries."""
+    sources = [
+        f"https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=3000&limit={limit}",
+        f"https://raw.githubusercontent.com/TheSpeedX/SOCKS-List/master/http.txt",
+        f"https://raw.githubusercontent.com/clarketm/proxy-list/master/proxy-list-raw.txt",
+    ]
+    proxies = []
+    for src in sources:
+        if len(proxies) >= limit:
+            break
+        try:
+            req = urllib.request.Request(src, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=6) as r:
+                lines = r.read().decode().strip().splitlines()
+                for line in lines:
+                    p = line.strip()
+                    if p and ":" in p and not p.startswith("#"):
+                        proxies.append(p)
+                    if len(proxies) >= limit:
+                        break
+        except Exception:
+            continue
+    return proxies[:limit]
+
+
+def _ydl_download(watch_url: str, opts: dict) -> tuple:
+    """Run yt-dlp with given opts, returns (path, title) or raises."""
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        info   = ydl.extract_info(watch_url, download=True)
+        vid_id = info["id"]
+        title  = info.get("title", "video")
+        path   = _find_downloaded_file(ydl, info, vid_id)
+        return path, title
+
+
 def download_video(url: str):
     """
-    Fast YouTube download using multiple yt-dlp player clients.
-    Strategy (in order, ~5-15 seconds each):
-      1. mweb  client  – lightweight mobile web, rarely blocked
-      2. tv_embedded   – TV app client, bypasses bot check
-      3. ios           – iOS app client
-      4. android       – Android app client
-    Falls back to a small fresh proxy list only if ALL direct clients fail.
+    Aggressive 4-tier YouTube download strategy:
+      Tier 1 — yt-dlp + browser impersonation (curl_cffi)
+      Tier 2 — yt-dlp player clients (mweb/tv_embedded/ios/android)
+      Tier 3 — yt-dlp + proxy rotation (30 proxies, 3 sources)
+      Tier 4 — pytubefix (completely separate library, different HTTP stack)
     """
-    # Extract video ID
-    video_id = None
-    if "youtu.be/" in url:
-        video_id = url.split("youtu.be/")[-1].split("?")[0].split("&")[0]
-    elif "watch?v=" in url:
-        video_id = url.split("watch?v=")[-1].split("&")[0]
-    elif "embed/" in url:
-        video_id = url.split("embed/")[-1].split("?")[0]
-
-    # Use original watch URL (embed URL sometimes fails with certain clients)
+    video_id  = _extract_video_id(url)
     watch_url = f"https://www.youtube.com/watch?v={video_id}" if video_id else url
+    print(f"\nDownloading: {watch_url}")
 
-    # Fetch cookiefile if configured
     cookie_path, is_temp = get_cookiefile_path()
     if cookie_path:
-        print(f"Using cookies: {'env variable' if is_temp else cookie_path}")
-
-    # ── Strategy 1: Try multiple player clients directly (NO proxy) ────────
-    # Each client emulates a different YouTube app context.
-    # mweb + tv_embedded bypass the "sign in to confirm" check most reliably.
-    client_strategies = [
-        ["mweb"],
-        ["tv_embedded"],
-        ["ios"],
-        ["android"],
-        ["ios", "tv_embedded"],          # combined fallback
-    ]
+        print(f"  Using cookies: {'from env' if is_temp else cookie_path}")
 
     base_opts = {
-        "format": "bestvideo[ext=mp4][height<=720]+bestaudio[ext=m4a]/best[ext=mp4]/best",
-        "outtmpl": str(DOWNLOAD_DIR / "%(id)s.%(ext)s"),
-        "merge_output_format": "mp4",
-        "quiet": True,
-        "no_warnings": True,
-        "socket_timeout": 20,
-        "retries": 2,
-        "fragment_retries": 2,
+        "format":               "bestvideo[ext=mp4][height<=720]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+        "outtmpl":              str(DOWNLOAD_DIR / "%(id)s.%(ext)s"),
+        "merge_output_format":  "mp4",
+        "quiet":                True,
+        "no_warnings":          True,
+        "socket_timeout":       20,
+        "retries":              1,
+        "fragment_retries":     1,
     }
     if cookie_path:
         base_opts["cookiefile"] = cookie_path
 
     try:
-        for i, clients in enumerate(client_strategies):
-            opts = {
-                **base_opts,
-                "extractor_args": {"youtube": {"player_client": clients}},
-            }
-            label = "+".join(clients)
-            print(f"[Attempt {i+1}] Trying player client: {label} ...")
+        # ════════════════════════════════════════════════════════
+        # TIER 1 — yt-dlp + curl_cffi browser impersonation
+        #   Spoofs real Chrome/Safari TLS fingerprint — strongest bypass
+        # ════════════════════════════════════════════════════════
+        impersonate_targets = ["chrome", "chrome110", "safari", "safari17_0", "edge99"]
+        for browser in impersonate_targets:
             try:
-                with yt_dlp.YoutubeDL(opts) as ydl:
-                    info   = ydl.extract_info(watch_url, download=True)
-                    vid_id = info["id"]
-                    title  = info.get("title", "video")
-
-                    expected = Path(ydl.prepare_filename(info))
-                    if not expected.exists():
-                        for f in DOWNLOAD_DIR.glob(f"{vid_id}.*"):
-                            if f.suffix in [".mp4", ".mkv", ".webm", ".avi"]:
-                                expected = f
-                                break
-
-                    print(f"✅ Downloaded '{title}' ({expected.name})")
-                    return expected, title
-
+                opts = {
+                    **base_opts,
+                    "impersonate": browser,
+                    "extractor_args": {"youtube": {"player_client": ["mweb", "web"]}},
+                }
+                print(f"[T1] Impersonating {browser} ...")
+                path, title = _ydl_download(watch_url, opts)
+                print(f"✅ [T1] Downloaded '{title}'")
+                return path, title
             except Exception as e:
                 err = str(e)
-                print(f"[Attempt {i+1}] {label} failed: {err[:120]}")
-                # If it's a clear bot/auth error on direct attempts, keep trying
-                continue
+                if "impersonate" in err.lower() or "curl" in err.lower() or "ModuleNotFoundError" in err:
+                    print(f"[T1] curl_cffi not available, skipping impersonation tier")
+                    break
+                print(f"[T1] {browser} failed: {err[:100]}")
 
-        # ── Strategy 2: Minimal proxy fallback (only 6 fast public proxies) ──
-        print("All direct clients failed. Trying a small proxy list...")
-        FAST_PROXIES = [
-            "https://socks5.proxyscan.io",   # public SOCKS5 list is often fast
+        # ════════════════════════════════════════════════════════
+        # TIER 2 — yt-dlp player clients (no proxy)
+        #   Different YouTube API paths — some bypass bot checks
+        # ════════════════════════════════════════════════════════
+        client_combos = [
+            ["mweb"],
+            ["tv_embedded"],
+            ["ios"],
+            ["android"],
+            ["web_creator"],
+            ["mweb", "ios"],
+            ["tv_embedded", "android"],
         ]
-        # Fetch a tiny fresh list (limit to 6)
-        try:
-            req = urllib.request.Request(
-                "https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=5000&limit=6",
-                headers={"User-Agent": "Mozilla/5.0"},
-            )
-            with urllib.request.urlopen(req, timeout=6) as resp:
-                raw = resp.read().decode().strip()
-                FAST_PROXIES = [p.strip() for p in raw.split("\n") if p.strip()][:6]
-        except Exception:
-            pass
-
-        for j, proxy in enumerate(FAST_PROXIES):
-            proxy_url = proxy if proxy.startswith("http") else f"http://{proxy}"
-            opts = {
-                **base_opts,
-                "proxy": proxy_url,
-                "extractor_args": {"youtube": {"player_client": ["mweb", "ios"]}},
-                "socket_timeout": 15,
-            }
-            print(f"[Proxy {j+1}] {proxy} ...")
+        for clients in client_combos:
+            label = "+".join(clients)
             try:
-                with yt_dlp.YoutubeDL(opts) as ydl:
-                    info   = ydl.extract_info(watch_url, download=True)
-                    vid_id = info["id"]
-                    title  = info.get("title", "video")
-
-                    expected = Path(ydl.prepare_filename(info))
-                    if not expected.exists():
-                        for f in DOWNLOAD_DIR.glob(f"{vid_id}.*"):
-                            if f.suffix in [".mp4", ".mkv", ".webm", ".avi"]:
-                                expected = f
-                                break
-
-                    print(f"✅ Downloaded via proxy: '{title}'")
-                    return expected, title
-
+                opts = {
+                    **base_opts,
+                    "extractor_args": {"youtube": {"player_client": clients}},
+                }
+                print(f"[T2] Client: {label} ...")
+                path, title = _ydl_download(watch_url, opts)
+                print(f"✅ [T2] Downloaded '{title}'")
+                return path, title
             except Exception as e:
-                print(f"[Proxy {j+1}] Failed: {str(e)[:100]}")
-                continue
+                print(f"[T2] {label}: {str(e)[:90]}")
+
+        # ════════════════════════════════════════════════════════
+        # TIER 3 — yt-dlp + proxy rotation (30 proxies, 3 sources)
+        #   Route through residential/datacenter proxy to get a clean IP
+        # ════════════════════════════════════════════════════════
+        print("[T3] Fetching proxy list (30 proxies from 3 sources)...")
+        proxies = _fetch_proxies(limit=30)
+        print(f"[T3] Got {len(proxies)} proxies. Trying each...")
+
+        for j, proxy in enumerate(proxies, 1):
+            proxy_url = f"http://{proxy}" if not proxy.startswith("http") else proxy
+            for clients in [["mweb"], ["tv_embedded"], ["ios"]]:
+                try:
+                    opts = {
+                        **base_opts,
+                        "proxy":            proxy_url,
+                        "socket_timeout":   12,
+                        "extractor_args":   {"youtube": {"player_client": clients}},
+                    }
+                    path, title = _ydl_download(watch_url, opts)
+                    print(f"✅ [T3] Proxy {j} ({proxy}) downloaded '{title}'")
+                    return path, title
+                except Exception as e:
+                    err = str(e)
+                    # Stop trying this proxy on connection errors, try next one
+                    if any(x in err for x in ["refused", "timed out", "tunnel", "Tunnel"]):
+                        break
+                    # Bot error — try next client on same proxy
+                    continue
+
+            if j % 5 == 0:
+                print(f"[T3] Tried {j}/{len(proxies)} proxies...")
+
+        # ════════════════════════════════════════════════════════
+        # TIER 4 — pytubefix
+        #   Completely separate HTTP stack, different YouTube API
+        # ════════════════════════════════════════════════════════
+        print("[T4] Trying pytubefix (separate HTTP stack)...")
+        try:
+            from pytubefix import YouTube
+            from pytubefix.cli import on_progress
+
+            yt     = YouTube(watch_url, on_progress_callback=on_progress, use_oauth=False)
+            title  = yt.title or "video"
+            stream = (
+                yt.streams.filter(progressive=True, file_extension="mp4")
+                  .order_by("resolution").last()
+                or yt.streams.get_highest_resolution()
+            )
+            if stream:
+                out_path = stream.download(output_path=str(DOWNLOAD_DIR),
+                                           filename=f"{video_id}.mp4")
+                print(f"✅ [T4] pytubefix downloaded '{title}'")
+                return Path(out_path), title
+        except ImportError:
+            print("[T4] pytubefix not installed")
+        except Exception as e:
+            print(f"[T4] pytubefix failed: {str(e)[:120]}")
 
     finally:
         if is_temp and cookie_path and os.path.exists(cookie_path):
@@ -199,9 +274,9 @@ def download_video(url: str):
                 pass
 
     raise RuntimeError(
-        "Could not download the YouTube video. "
-        "This usually means YouTube has blocked the server IP. "
-        "Try a different video or add a YOUTUBE_COOKIES environment variable."
+        "All 4 download tiers failed. The server IP is heavily blocked by YouTube. "
+        "Please set the YOUTUBE_COOKIES environment variable on Render with your "
+        "exported YouTube cookies to bypass this restriction reliably."
     )
 
 
