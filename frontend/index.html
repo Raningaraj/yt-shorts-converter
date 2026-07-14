@@ -379,8 +379,12 @@
 // Retrieve API URL
 // Check if hostname is local
 function isLocalHost(hn) {
+  if (window.location.port === "5000") {
+    return true;
+  }
   return hn === "localhost" || 
          hn === "127.0.0.1" || 
+         hn.endsWith(".local") ||
          hn.startsWith("192.168.") || 
          hn.startsWith("10.") || 
          hn.startsWith("172.16.") || 
