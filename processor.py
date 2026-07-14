@@ -24,7 +24,7 @@ DOWNLOAD_DIR.mkdir(exist_ok=True)
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "").strip()
 if not GROQ_API_KEY:
     print("\n" + "="*60)
-    print("⚠️  ERROR: GROQ_API_KEY not set!")
+    print("WARNING: GROQ_API_KEY not set!")
     print("="*60)
     print("\nSteps to fix:")
     print("1. Get a FREE Groq API key from: https://console.groq.com")
@@ -130,23 +130,42 @@ def _ydl_download(watch_url: str, opts: dict) -> tuple:
 
 def download_video(url: str):
     """
-    Aggressive 4-tier YouTube download strategy:
-      Tier 1 — yt-dlp + browser impersonation (curl_cffi)
-      Tier 2 — yt-dlp player clients (mweb/tv_embedded/ios/android)
-      Tier 3 — yt-dlp + proxy rotation (30 proxies, 3 sources)
-      Tier 4 — pytubefix (completely separate library, different HTTP stack)
+    Optimized 4-tier YouTube download strategy:
+      Tier 1 — pytubefix (Direct) -> Bypass SABR & bot checks for public videos
+      Tier 2 — yt-dlp player clients (direct) -> Handles age-restricted/auth via cookies
+      Tier 3 — yt-dlp + browser impersonation (curl_cffi)
+      Tier 4 — yt-dlp + fast proxy rotation (try 5 proxies, fast timeout)
     """
     video_id  = _extract_video_id(url)
     watch_url = f"https://www.youtube.com/watch?v={video_id}" if video_id else url
     print(f"\nDownloading: {watch_url}")
 
+    # ════════════════════════════════════════════════════════
+    # TIER 1 — pytubefix (Direct)
+    # ════════════════════════════════════════════════════════
+    print("[T1] Trying pytubefix (direct download)...")
+    try:
+        from pytubefix import YouTube
+        yt     = YouTube(watch_url, use_oauth=False)
+        title  = yt.title or "video"
+        stream = yt.streams.get_highest_resolution()
+        if stream:
+            out_path = stream.download(output_path=str(DOWNLOAD_DIR),
+                                       filename=f"{video_id}.mp4")
+            print(f"[SUCCESS] [T1] pytubefix downloaded '{title}'")
+            return Path(out_path), title
+        else:
+            print("[T1] pytubefix: no progressive stream found")
+    except Exception as e:
+        print(f"[T1] pytubefix failed: {str(e)[:120]}")
+
+    # Prepare for yt-dlp fallback tiers (T2/T3/T4)
     cookie_path, is_temp = get_cookiefile_path()
     if cookie_path:
         print(f"  Using cookies: {'from env' if is_temp else cookie_path}")
 
     base_opts = {
-        # Permissive format cascade — accepts whatever the proxy can get
-        # Most restrictive first, falls back to any available format
+        # Permissive format cascade — accepts whatever is available
         "format":              (
             "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/"
             "bestvideo[height<=720]+bestaudio/"
@@ -157,9 +176,10 @@ def download_video(url: str):
         ),
         "outtmpl":              str(DOWNLOAD_DIR / "%(id)s.%(ext)s"),
         "merge_output_format":  "mp4",
+        "ffmpeg_location":      get_ffmpeg(),
         "quiet":                True,
         "no_warnings":          True,
-        "socket_timeout":       20,
+        "socket_timeout":       15,
         "retries":              1,
         "fragment_retries":     1,
     }
@@ -168,31 +188,7 @@ def download_video(url: str):
 
     try:
         # ════════════════════════════════════════════════════════
-        # TIER 1 — yt-dlp + curl_cffi browser impersonation
-        #   Spoofs real Chrome/Safari TLS fingerprint — strongest bypass
-        # ════════════════════════════════════════════════════════
-        impersonate_targets = ["chrome", "chrome110", "safari", "safari17_0", "edge99"]
-        for browser in impersonate_targets:
-            try:
-                opts = {
-                    **base_opts,
-                    "impersonate": browser,
-                    "extractor_args": {"youtube": {"player_client": ["mweb", "web"]}},
-                }
-                print(f"[T1] Impersonating {browser} ...")
-                path, title = _ydl_download(watch_url, opts)
-                print(f"✅ [T1] Downloaded '{title}'")
-                return path, title
-            except Exception as e:
-                err = str(e)
-                if "impersonate" in err.lower() or "curl" in err.lower() or "ModuleNotFoundError" in err:
-                    print(f"[T1] curl_cffi not available, skipping impersonation tier")
-                    break
-                print(f"[T1] {browser} failed: {err[:100]}")
-
-        # ════════════════════════════════════════════════════════
-        # TIER 2 — yt-dlp player clients (no proxy)
-        #   Different YouTube API paths — some bypass bot checks
+        # TIER 2 — yt-dlp player clients (direct)
         # ════════════════════════════════════════════════════════
         client_combos = [
             ["mweb"],
@@ -212,68 +208,60 @@ def download_video(url: str):
                 }
                 print(f"[T2] Client: {label} ...")
                 path, title = _ydl_download(watch_url, opts)
-                print(f"✅ [T2] Downloaded '{title}'")
+                print(f"[SUCCESS] [T2] Downloaded '{title}'")
                 return path, title
             except Exception as e:
                 print(f"[T2] {label}: {str(e)[:90]}")
 
         # ════════════════════════════════════════════════════════
-        # TIER 3 — yt-dlp + proxy rotation (30 proxies, 3 sources)
-        #   Route through residential/datacenter proxy to get a clean IP
+        # TIER 3 — yt-dlp + curl_cffi browser impersonation
         # ════════════════════════════════════════════════════════
-        print("[T3] Fetching proxy list (30 proxies from 3 sources)...")
-        proxies = _fetch_proxies(limit=30)
-        print(f"[T3] Got {len(proxies)} proxies. Trying each...")
+        impersonate_targets = ["chrome", "chrome110", "safari", "safari17_0", "edge99"]
+        for browser in impersonate_targets:
+            try:
+                opts = {
+                    **base_opts,
+                    "impersonate": browser,
+                    "extractor_args": {"youtube": {"player_client": ["mweb", "web"]}},
+                }
+                print(f"[T3] Impersonating {browser} ...")
+                path, title = _ydl_download(watch_url, opts)
+                print(f"[SUCCESS] [T3] Downloaded '{title}'")
+                return path, title
+            except Exception as e:
+                err = str(e)
+                if "impersonate" in err.lower() or "curl" in err.lower() or "ModuleNotFoundError" in err:
+                    print(f"[T3] curl_cffi not available, skipping impersonation tier")
+                    break
+                print(f"[T3] {browser} failed: {err[:100]}")
 
-        for j, proxy in enumerate(proxies, 1):
+        # ════════════════════════════════════════════════════════
+        # TIER 4 — yt-dlp + fast proxy rotation (try 5 proxies, fast timeout)
+        # ════════════════════════════════════════════════════════
+        print("[T4] Fetching proxies (limit 10)...")
+        proxies = _fetch_proxies(limit=10)
+        print(f"[T4] Trying up to 5 proxies...")
+
+        tried_count = 0
+        for proxy in proxies:
+            if tried_count >= 5:
+                break
             proxy_url = f"http://{proxy}" if not proxy.startswith("http") else proxy
-            for clients in [["mweb"], ["tv_embedded"], ["ios"]]:
-                try:
-                    opts = {
-                        **base_opts,
-                        "proxy":            proxy_url,
-                        "socket_timeout":   12,
-                        "extractor_args":   {"youtube": {"player_client": clients}},
-                    }
-                    path, title = _ydl_download(watch_url, opts)
-                    print(f"✅ [T3] Proxy {j} ({proxy}) downloaded '{title}'")
-                    return path, title
-                except Exception as e:
-                    err = str(e)
-                    # Stop trying this proxy on connection errors, try next one
-                    if any(x in err for x in ["refused", "timed out", "tunnel", "Tunnel"]):
-                        break
-                    # Bot error — try next client on same proxy
-                    continue
-
-            if j % 5 == 0:
-                print(f"[T3] Tried {j}/{len(proxies)} proxies...")
-
-        # ════════════════════════════════════════════════════════
-        # TIER 4 — pytubefix
-        #   Completely separate HTTP stack, different YouTube API
-        # ════════════════════════════════════════════════════════
-        print("[T4] Trying pytubefix (separate HTTP stack)...")
-        try:
-            from pytubefix import YouTube
-            from pytubefix.cli import on_progress
-
-            yt     = YouTube(watch_url, on_progress_callback=on_progress, use_oauth=False)
-            title  = yt.title or "video"
-            stream = (
-                yt.streams.filter(progressive=True, file_extension="mp4")
-                  .order_by("resolution").last()
-                or yt.streams.get_highest_resolution()
-            )
-            if stream:
-                out_path = stream.download(output_path=str(DOWNLOAD_DIR),
-                                           filename=f"{video_id}.mp4")
-                print(f"✅ [T4] pytubefix downloaded '{title}'")
-                return Path(out_path), title
-        except ImportError:
-            print("[T4] pytubefix not installed")
-        except Exception as e:
-            print(f"[T4] pytubefix failed: {str(e)[:120]}")
+            tried_count += 1
+            try:
+                opts = {
+                    **base_opts,
+                    "proxy":            proxy_url,
+                    "socket_timeout":   10,
+                    "extractor_args":   {"youtube": {"player_client": ["mweb"]}},
+                }
+                print(f"[T4] Proxy {tried_count} ({proxy}) ...")
+                path, title = _ydl_download(watch_url, opts)
+                print(f"[SUCCESS] [T4] Proxy downloaded '{title}'")
+                return path, title
+            except Exception as e:
+                print(f"[T4] Proxy {tried_count} failed: {str(e)[:90]}")
+                continue
 
     finally:
         if is_temp and cookie_path and os.path.exists(cookie_path):
