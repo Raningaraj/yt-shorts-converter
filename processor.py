@@ -46,6 +46,7 @@ def get_cookiefile_path():
     """
     Check if a cookies.txt file exists in the directory, or if a YOUTUBE_COOKIES
     environment variable is set containing Netscape cookie file content.
+    Supports raw Netscape format or Base64-encoded Netscape format.
     Returns (path_str, is_temp).
     """
     # 1. Check if cookies.txt exists in the backend directory
@@ -56,6 +57,17 @@ def get_cookiefile_path():
     # 2. Check if YOUTUBE_COOKIES env var is defined
     cookies_content = os.environ.get("YOUTUBE_COOKIES", "").strip()
     if cookies_content:
+        # Auto-detect and decode Base64 cookies to prevent env var formatting issues
+        if not cookies_content.startswith("#") and "youtube.com" not in cookies_content:
+            try:
+                import base64
+                decoded = base64.b64decode(cookies_content).decode('utf-8', errors='ignore')
+                if "# Netscape" in decoded or "youtube.com" in decoded:
+                    print("  [COOKIES] Successfully decoded Base64 YOUTUBE_COOKIES env var.")
+                    cookies_content = decoded
+            except Exception as e:
+                print(f"  [COOKIES] Failed to decode potential Base64 cookies: {e}")
+
         fd, temp_path = tempfile.mkstemp(suffix=".txt", prefix="cookies_")
         with os.fdopen(fd, 'w', encoding='utf-8') as f:
             f.write(cookies_content)
@@ -141,23 +153,26 @@ def download_video(url: str):
     print(f"\nDownloading: {watch_url}")
 
     # ════════════════════════════════════════════════════════
-    # TIER 1 — pytubefix (Direct)
+    # TIER 1 — pytubefix (Direct, Rotating Clients)
     # ════════════════════════════════════════════════════════
     print("[T1] Trying pytubefix (direct download)...")
-    try:
-        from pytubefix import YouTube
-        yt     = YouTube(watch_url, use_oauth=False)
-        title  = yt.title or "video"
-        stream = yt.streams.get_highest_resolution()
-        if stream:
-            out_path = stream.download(output_path=str(DOWNLOAD_DIR),
-                                       filename=f"{video_id}.mp4")
-            print(f"[SUCCESS] [T1] pytubefix downloaded '{title}'")
-            return Path(out_path), title
-        else:
-            print("[T1] pytubefix: no progressive stream found")
-    except Exception as e:
-        print(f"[T1] pytubefix failed: {str(e)[:120]}")
+    for pt_client in ["MWEB", "WEB", "ANDROID"]:
+        try:
+            from pytubefix import YouTube
+            print(f"[T1] Using client: {pt_client}...")
+            yt     = YouTube(watch_url, client=pt_client, use_oauth=False)
+            title  = yt.title or "video"
+            stream = yt.streams.get_highest_resolution()
+            if stream:
+                out_path = stream.download(output_path=str(DOWNLOAD_DIR),
+                                           filename=f"{video_id}.mp4")
+                print(f"[SUCCESS] [T1] pytubefix ({pt_client}) downloaded '{title}'")
+                return Path(out_path), title
+            else:
+                print(f"[T1] pytubefix ({pt_client}): no progressive stream found")
+        except Exception as e:
+            print(f"[T1] pytubefix ({pt_client}) failed: {str(e)[:90]}")
+            continue
 
     # Prepare for yt-dlp fallback tiers (T2/T3/T4)
     cookie_path, is_temp = get_cookiefile_path()
