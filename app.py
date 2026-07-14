@@ -14,7 +14,7 @@ OUTPUT_DIR = BACKEND_DIR / "output_shorts"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 app = Flask(__name__, static_folder=str(FRONTEND_DIR), static_url_path="/")
-CORS(app, expose_headers=["Content-Disposition"])
+CORS(app, expose_headers=["Content-Disposition", "Content-Range", "Accept-Ranges", "Content-Length"])
 
 jobs: dict[str, dict] = {}
 
@@ -129,12 +129,53 @@ def job_status(job_id: str):
 
 @app.route("/api/download/<filename>")
 def download_short(filename: str):
-    """Serve a generated short video."""
-    safe_name = Path(filename).name          
+    """Serve a generated short video with range-request support for browser preview."""
+    import mimetypes
+    from flask import Response
+    
+    safe_name = Path(filename).name
     file_path = OUTPUT_DIR / safe_name
     if not file_path.exists():
         return jsonify({"error": "file not found"}), 404
-    return send_file(str(file_path), mimetype="video/mp4", as_attachment=True)
+
+    file_size = file_path.stat().st_size
+    range_header = request.headers.get("Range", None)
+
+    # Support for partial content (required for HTML5 <video> seek support)
+    if range_header:
+        byte1, byte2 = 0, None
+        match = __import__("re").search(r"(\d+)-(\d*)", range_header)
+        if match:
+            g = match.groups()
+            byte1 = int(g[0])
+            byte2 = int(g[1]) if g[1] else file_size - 1
+
+        byte2 = min(byte2, file_size - 1)
+        length = byte2 - byte1 + 1
+
+        with open(file_path, "rb") as f:
+            f.seek(byte1)
+            data = f.read(length)
+
+        resp = Response(
+            data,
+            206,
+            mimetype="video/mp4",
+            direct_passthrough=True,
+        )
+        resp.headers["Content-Range"] = f"bytes {byte1}-{byte2}/{file_size}"
+        resp.headers["Accept-Ranges"] = "bytes"
+        resp.headers["Content-Length"] = str(length)
+        resp.headers["Content-Disposition"] = f"inline; filename=\"{safe_name}\""
+        return resp
+
+    # Regular full file response
+    resp = send_file(str(file_path), mimetype="video/mp4", as_attachment=False)
+    resp.headers["Accept-Ranges"] = "bytes"
+    resp.headers["Content-Length"] = str(file_size)
+    resp.headers["Content-Disposition"] = f"inline; filename=\"{safe_name}\""
+    return resp
+
 
 
 @app.route("/api/export", methods=["POST"])

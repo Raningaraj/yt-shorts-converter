@@ -3,367 +3,778 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>YT → Shorts Converter | AI Project</title>
+  <title>ShortsAI – YouTube to Shorts Converter</title>
+  <meta name="description" content="Transform any YouTube video into 5-6 AI-powered shorts instantly. Powered by Groq AI and Whisper transcription.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <style>
-    
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --red:    #ff0000;
-      --dark:   #0f0f0f;
-      --card:   #1a1a2e;
-      --card2:  #16213e;
-      --accent: #e94560;
-      --purple: #533483;
-      --text:   #e0e0e0;
-      --muted:  #888;
-      --radius: 14px;
-      --shadow: 0 8px 32px rgba(0,0,0,.5);
+      --bg:      #080b14;
+      --surface: #0e1422;
+      --card:    #131929;
+      --border:  rgba(255,255,255,0.07);
+      --accent:  #6c63ff;
+      --accent2: #ff4d8d;
+      --green:   #22d3a5;
+      --text:    #e8eaf0;
+      --muted:   #6b7280;
+      --radius:  16px;
+      --shadow:  0 20px 60px rgba(0,0,0,0.6);
     }
 
+    html { scroll-behavior: smooth; }
+
     body {
-      font-family: 'Segoe UI', system-ui, sans-serif;
-      background: var(--dark);
+      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--bg);
       color: var(--text);
       min-height: 100vh;
       overflow-x: hidden;
     }
 
-    
+    /* ── Animated background ── */
     body::before {
       content: '';
-      position: fixed; inset: 0;
-      background: radial-gradient(ellipse at 20% 20%, #1a0533 0%, transparent 60%),
-                  radial-gradient(ellipse at 80% 80%, #001a33 0%, transparent 60%);
-      z-index: -1;
+      position: fixed; inset: 0; z-index: -2;
+      background:
+        radial-gradient(ellipse 80% 60% at 10% 10%,  rgba(108,99,255,0.12) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 50% at 90% 90%,  rgba(255,77,141,0.10) 0%, transparent 60%),
+        radial-gradient(ellipse 50% 40% at 50% 50%,  rgba(34,211,165,0.05) 0%, transparent 60%);
     }
 
-    
+    /* ── Grid overlay ── */
+    body::after {
+      content: '';
+      position: fixed; inset: 0; z-index: -1;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+      background-size: 48px 48px;
+    }
+
+    /* ── HEADER ── */
     header {
-      display: flex; align-items: center; gap: 14px;
-      padding: 24px 40px;
-      background: rgba(255,255,255,.03);
-      border-bottom: 1px solid rgba(255,255,255,.07);
-      backdrop-filter: blur(12px);
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 18px 48px;
+      background: rgba(8,11,20,0.8);
+      border-bottom: 1px solid var(--border);
+      backdrop-filter: blur(20px);
+      position: sticky; top: 0; z-index: 100;
     }
 
-    .logo {
-      width: 42px; height: 42px; border-radius: 10px;
-      background: var(--red);
-      display: grid; place-items: center; font-size: 20px;
+    .logo-wrap {
+      display: flex; align-items: center; gap: 12px;
     }
 
-    header h1 { font-size: 1.35rem; font-weight: 700; }
-    header h1 span { color: var(--accent); }
-
-    .badge {
-      margin-left: auto;
-      background: rgba(83,52,131,.45);
-      border: 1px solid var(--purple);
-      padding: 4px 12px; border-radius: 20px;
-      font-size: .75rem; color: #c4a8ff;
+    .logo-icon {
+      width: 38px; height: 38px; border-radius: 10px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      display: grid; place-items: center; font-size: 18px;
+      box-shadow: 0 4px 20px rgba(108,99,255,0.4);
     }
 
-    
+    .logo-text {
+      font-size: 1.2rem; font-weight: 800;
+      background: linear-gradient(135deg, #fff 40%, rgba(255,255,255,0.5));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+
+    .logo-text span { 
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+
+    .header-badge {
+      font-size: 0.72rem; font-weight: 600;
+      padding: 5px 14px; border-radius: 20px;
+      background: rgba(108,99,255,0.15);
+      border: 1px solid rgba(108,99,255,0.35);
+      color: #a5a0ff;
+      letter-spacing: 0.03em;
+    }
+
+    /* ── MAIN ── */
     main {
-      max-width: 900px; margin: 0 auto;
-      padding: 40px 20px 80px;
-      display: flex; flex-direction: column; gap: 32px;
+      max-width: 960px; margin: 0 auto;
+      padding: 60px 24px 100px;
+      display: flex; flex-direction: column; gap: 40px;
     }
 
-    
+    /* ── HERO ── */
     .hero { text-align: center; }
-    .hero h2 { font-size: clamp(1.6rem, 4vw, 2.4rem); font-weight: 800; line-height: 1.25; }
-    .hero h2 em { font-style: normal; color: var(--accent); }
-    .hero p  { margin-top: 10px; color: var(--muted); font-size: .95rem; line-height: 1.6; }
 
-    
-    .card {
-      background: var(--card);
-      border: 1px solid rgba(255,255,255,.07);
-      border-radius: var(--radius);
-      padding: 30px;
-      box-shadow: var(--shadow);
+    .hero-eyebrow {
+      display: inline-flex; align-items: center; gap: 8px;
+      font-size: 0.75rem; font-weight: 600; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--accent);
+      margin-bottom: 18px;
+      background: rgba(108,99,255,0.12);
+      border: 1px solid rgba(108,99,255,0.25);
+      padding: 5px 16px; border-radius: 20px;
     }
 
-    .input-row {
+    .hero h1 {
+      font-size: clamp(2rem, 5vw, 3.2rem);
+      font-weight: 900; line-height: 1.15;
+      letter-spacing: -0.03em;
+    }
+
+    .hero h1 .gradient-text {
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent2) 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+
+    .hero p {
+      margin-top: 16px;
+      color: var(--muted); font-size: 1rem; line-height: 1.75;
+      max-width: 560px; margin-left: auto; margin-right: auto;
+    }
+
+    .hero-stats {
+      display: flex; justify-content: center; gap: 32px;
+      margin-top: 28px; flex-wrap: wrap;
+    }
+
+    .stat {
+      text-align: center;
+    }
+
+    .stat-num {
+      font-size: 1.5rem; font-weight: 800;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+
+    .stat-label {
+      font-size: 0.72rem; color: var(--muted); margin-top: 2px;
+      text-transform: uppercase; letter-spacing: 0.08em;
+    }
+
+    /* ── INPUT CARD ── */
+    .input-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 32px;
+      box-shadow: var(--shadow);
+      position: relative; overflow: hidden;
+    }
+
+    .input-card::before {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, var(--accent), var(--accent2), var(--green));
+    }
+
+    .input-label {
+      font-size: 0.82rem; font-weight: 600; color: var(--muted);
+      letter-spacing: 0.05em; text-transform: uppercase;
+      margin-bottom: 10px; display: block;
+    }
+
+    .url-row {
       display: flex; gap: 12px; flex-wrap: wrap;
     }
 
     .url-input {
       flex: 1 1 300px;
-      background: rgba(255,255,255,.05);
-      border: 1.5px solid rgba(255,255,255,.12);
-      border-radius: 10px;
-      padding: 14px 18px;
+      background: rgba(255,255,255,0.04);
+      border: 1.5px solid rgba(255,255,255,0.1);
+      border-radius: 12px;
+      padding: 16px 20px;
       color: var(--text);
-      font-size: .97rem;
+      font-size: 0.97rem;
+      font-family: inherit;
       outline: none;
-      transition: border .2s;
+      transition: border 0.2s, background 0.2s, box-shadow 0.2s;
     }
-    .url-input:focus { border-color: var(--accent); }
+
+    .url-input:focus {
+      border-color: var(--accent);
+      background: rgba(108,99,255,0.06);
+      box-shadow: 0 0 0 3px rgba(108,99,255,0.12);
+    }
+
     .url-input::placeholder { color: var(--muted); }
 
-    .btn {
-      padding: 14px 28px;
-      border: none; border-radius: 10px;
-      font-size: .97rem; font-weight: 700;
-      cursor: pointer; transition: transform .15s, opacity .15s;
+    .btn-convert {
+      display: flex; align-items: center; gap: 10px;
+      padding: 16px 32px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      color: #fff; border: none; border-radius: 12px;
+      font-size: 1rem; font-weight: 700; font-family: inherit;
+      cursor: pointer; white-space: nowrap;
+      transition: opacity 0.2s, transform 0.15s, box-shadow 0.2s;
+      box-shadow: 0 4px 24px rgba(108,99,255,0.4);
     }
-    .btn:active { transform: scale(.97); }
-    .btn:disabled { opacity: .45; cursor: not-allowed; }
 
-    .btn-primary { background: var(--accent); color: #fff; }
-    .btn-primary:hover:not(:disabled) { opacity: .88; }
+    .btn-convert:hover:not(:disabled) {
+      opacity: 0.9; transform: translateY(-1px);
+      box-shadow: 0 8px 32px rgba(108,99,255,0.5);
+    }
+
+    .btn-convert:active { transform: scale(0.98); }
+    .btn-convert:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
 
     .options-row {
-      display: flex; gap: 20px; margin-top: 18px; flex-wrap: wrap;
-      font-size: .88rem; color: var(--muted);
+      display: flex; gap: 24px; margin-top: 18px; flex-wrap: wrap;
+      align-items: center;
     }
-    .options-row label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
-    .options-row input[type=checkbox] { accent-color: var(--accent); width: 15px; height: 15px; }
 
-    
+    .toggle-label {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 0.88rem; color: var(--muted); cursor: pointer;
+      user-select: none;
+    }
+
+    .toggle-label input[type=checkbox] {
+      width: 16px; height: 16px;
+      accent-color: var(--accent); cursor: pointer;
+    }
+
+    /* ── PROGRESS ── */
     #progress-section { display: none; }
 
-    .steps { display: flex; gap: 0; margin-bottom: 24px; }
-    .step {
-      flex: 1; text-align: center; padding: 10px 4px;
-      font-size: .75rem; color: var(--muted);
-      border-bottom: 3px solid rgba(255,255,255,.08);
-      transition: color .3s, border-color .3s;
+    .progress-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 32px;
     }
-    .step.active   { color: var(--accent); border-color: var(--accent); }
-    .step.complete { color: #5fff9d;       border-color: #5fff9d; }
 
-    .step-icon { font-size: 1.3rem; display: block; margin-bottom: 4px; }
-
-    .progress-bar-wrap {
-      background: rgba(255,255,255,.07);
-      border-radius: 99px; height: 8px; overflow: hidden; margin-bottom: 10px;
+    .steps-row {
+      display: flex; gap: 0; margin-bottom: 28px;
+      background: rgba(255,255,255,0.03);
+      border-radius: 12px; padding: 4px; overflow: hidden;
     }
-    .progress-bar {
-      height: 100%; background: linear-gradient(90deg, var(--purple), var(--accent));
+
+    .step-pill {
+      flex: 1; text-align: center; padding: 10px 6px;
+      font-size: 0.75rem; font-weight: 600; color: var(--muted);
+      border-radius: 9px;
+      transition: color 0.3s, background 0.3s;
+      display: flex; flex-direction: column; align-items: center; gap: 4px;
+    }
+
+    .step-pill .step-icon { font-size: 1.2rem; }
+    .step-pill.active { color: var(--accent); background: rgba(108,99,255,0.15); }
+    .step-pill.done   { color: var(--green);  background: rgba(34,211,165,0.10); }
+
+    .progress-bar-track {
+      background: rgba(255,255,255,0.07);
+      border-radius: 99px; height: 6px; overflow: hidden;
+      margin-bottom: 12px;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
       border-radius: 99px;
-      width: 0%; transition: width .6s ease;
+      width: 0%; transition: width 0.7s ease;
     }
-    .progress-label { font-size: .85rem; color: var(--muted); text-align: center; }
 
-    
+    .progress-status {
+      text-align: center; font-size: 0.88rem; color: var(--muted);
+      min-height: 1.4em;
+    }
+
+    /* ── ERROR ── */
+    #error-section {
+      display: none;
+      background: rgba(255,77,141,0.08);
+      border: 1px solid rgba(255,77,141,0.3);
+      border-radius: var(--radius); padding: 20px 24px;
+      color: #ffb3cb; font-size: 0.92rem;
+      display: none; align-items: flex-start; gap: 12px;
+    }
+
+    .error-icon { font-size: 1.3rem; flex-shrink: 0; margin-top: 2px; }
+
+    /* ── RESULTS SECTION ── */
     #results-section { display: none; }
 
     .results-header {
       display: flex; align-items: center; justify-content: space-between;
-      margin-bottom: 20px; flex-wrap: wrap; gap: 10px;
-    }
-    .results-header h3 { font-size: 1.2rem; }
-    .results-header .count {
-      background: rgba(233,69,96,.2); border: 1px solid var(--accent);
-      padding: 4px 14px; border-radius: 20px; font-size: .8rem; color: var(--accent);
+      flex-wrap: wrap; gap: 12px; margin-bottom: 24px;
     }
 
+    .results-title {
+      display: flex; align-items: center; gap: 10px;
+    }
+
+    .results-title h2 { font-size: 1.3rem; font-weight: 800; }
+
+    .count-badge {
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      color: #fff; font-size: 0.72rem; font-weight: 700;
+      padding: 4px 12px; border-radius: 20px;
+    }
+
+    .results-actions {
+      display: flex; gap: 10px; flex-wrap: wrap;
+    }
+
+    .btn-outline {
+      padding: 9px 18px;
+      background: transparent;
+      border: 1.5px solid var(--border);
+      border-radius: 10px; color: var(--muted);
+      font-size: 0.82rem; font-weight: 600; font-family: inherit;
+      cursor: pointer; transition: border-color 0.2s, color 0.2s, background 0.2s;
+    }
+
+    .btn-outline:hover { border-color: rgba(255,255,255,0.25); color: var(--text); background: rgba(255,255,255,0.04); }
+
+    .btn-zip {
+      padding: 9px 18px;
+      background: linear-gradient(135deg, rgba(108,99,255,0.2), rgba(255,77,141,0.2));
+      border: 1.5px solid rgba(108,99,255,0.4);
+      border-radius: 10px; color: #a5a0ff;
+      font-size: 0.82rem; font-weight: 700; font-family: inherit;
+      cursor: pointer; transition: opacity 0.2s, transform 0.15s;
+      display: flex; align-items: center; gap: 7px;
+    }
+
+    .btn-zip:hover { opacity: 0.85; transform: translateY(-1px); }
+
+    /* ── SHORTS GRID ── */
     .shorts-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-      gap: 18px;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 20px;
     }
 
+    /* ── SHORT CARD ── */
     .short-card {
-      background: var(--card2);
-      border: 1px solid rgba(255,255,255,.07);
+      background: var(--card);
+      border: 1px solid var(--border);
       border-radius: var(--radius);
       overflow: hidden;
-      transition: transform .2s, box-shadow .2s;
-    }
-    .short-card:hover { transform: translateY(-4px); box-shadow: 0 16px 40px rgba(0,0,0,.5); }
-
-    .short-thumb {
-      aspect-ratio: 9/16; background: linear-gradient(135deg,#1a0533,#001a33);
-      display: grid; place-items: center; font-size: 2.5rem;
-      position: relative; overflow: hidden;
-    }
-    .short-num {
-      position: absolute; top: 10px; left: 10px;
-      background: var(--accent); color: #fff;
-      font-size: .7rem; font-weight: 800;
-      padding: 3px 9px; border-radius: 6px;
-    }
-    .short-info { padding: 14px; }
-    .short-info h4 { font-size: .9rem; margin-bottom: 6px; line-height: 1.3; }
-    .short-info p  { font-size: .75rem; color: var(--muted); line-height: 1.5; }
-
-    .terms { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 5px; }
-    .term-chip {
-      background: rgba(83,52,131,.4); border: 1px solid rgba(83,52,131,.7);
-      color: #c4a8ff; font-size: .65rem; padding: 2px 8px; border-radius: 20px;
+      transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+      position: relative;
     }
 
-    .short-actions { padding: 0 14px 14px; display: flex; gap: 8px; }
-    .btn-dl {
-      flex: 1; padding: 9px; font-size: .82rem; font-weight: 700;
-      background: linear-gradient(135deg, var(--purple), var(--accent));
-      color: #fff; border: none; border-radius: 8px; cursor: pointer;
-      transition: opacity .2s;
+    .short-card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+      border-color: rgba(108,99,255,0.3);
     }
-    .btn-dl:hover { opacity: .85; }
 
-    
-    #error-section {
+    /* ── VIDEO PLAYER ── */
+    .video-wrapper {
+      position: relative;
+      aspect-ratio: 9/16;
+      background: #000;
+      overflow: hidden;
+    }
+
+    .short-video {
+      width: 100%; height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .video-overlay {
+      position: absolute; inset: 0;
+      background: linear-gradient(
+        to bottom,
+        transparent 50%,
+        rgba(0,0,0,0.75) 100%
+      );
+      opacity: 1;
+      pointer-events: none;
+    }
+
+    .video-num {
+      position: absolute; top: 12px; left: 12px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      color: #fff; font-size: 0.65rem; font-weight: 800;
+      padding: 3px 10px; border-radius: 6px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.4);
+      z-index: 2;
+    }
+
+    .play-btn {
+      position: absolute; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; z-index: 3;
+      opacity: 1; transition: opacity 0.2s;
+    }
+
+    .play-btn.hidden { opacity: 0; pointer-events: none; }
+
+    .play-circle {
+      width: 58px; height: 58px;
+      background: rgba(255,255,255,0.15);
+      border: 2.5px solid rgba(255,255,255,0.6);
+      border-radius: 50%;
+      display: grid; place-items: center;
+      backdrop-filter: blur(8px);
+      transition: background 0.2s, transform 0.15s;
+      font-size: 20px;
+    }
+
+    .play-btn:hover .play-circle {
+      background: rgba(108,99,255,0.5);
+      transform: scale(1.1);
+    }
+
+    .video-loading {
+      position: absolute; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(0,0,0,0.6);
+      z-index: 4; color: var(--muted); font-size: 0.8rem;
+      flex-direction: column; gap: 8px;
+    }
+
+    .spinner {
+      width: 32px; height: 32px;
+      border: 3px solid rgba(255,255,255,0.1);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── SHORT INFO ── */
+    .short-info {
+      padding: 14px 16px 6px;
+    }
+
+    .short-info h4 {
+      font-size: 0.88rem; font-weight: 700;
+      line-height: 1.35; color: var(--text);
+      display: -webkit-box; -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical; overflow: hidden;
+    }
+
+    .short-meta {
+      margin-top: 6px; font-size: 0.72rem; color: var(--muted);
+      display: flex; align-items: center; gap: 6px;
+    }
+
+    .meta-dot {
+      width: 3px; height: 3px; border-radius: 50%;
+      background: var(--muted);
+    }
+
+    /* ── SHORT ACTIONS ── */
+    .short-actions {
+      padding: 12px 14px 14px;
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .btn-dl-single {
+      padding: 9px 10px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      color: #fff; border: none; border-radius: 9px;
+      font-size: 0.8rem; font-weight: 700; font-family: inherit;
+      cursor: pointer; transition: opacity 0.2s, transform 0.15s;
+      display: flex; align-items: center; justify-content: center; gap: 5px;
+    }
+
+    .btn-dl-single:hover { opacity: 0.85; transform: translateY(-1px); }
+
+    .btn-preview-fullscreen {
+      padding: 9px 10px;
+      background: rgba(255,255,255,0.05);
+      border: 1.5px solid var(--border);
+      border-radius: 9px; color: var(--muted);
+      font-size: 0.8rem; font-weight: 600; font-family: inherit;
+      cursor: pointer; transition: background 0.2s, border-color 0.2s, color 0.2s;
+      display: flex; align-items: center; justify-content: center; gap: 5px;
+    }
+
+    .btn-preview-fullscreen:hover {
+      background: rgba(255,255,255,0.09);
+      border-color: rgba(255,255,255,0.18);
+      color: var(--text);
+    }
+
+    /* ── MODAL PREVIEW ── */
+    .modal-overlay {
+      display: none; position: fixed; inset: 0; z-index: 1000;
+      background: rgba(0,0,0,0.88);
+      backdrop-filter: blur(16px);
+      align-items: center; justify-content: center;
+    }
+
+    .modal-overlay.open { display: flex; }
+
+    .modal-inner {
+      position: relative;
+      max-width: 380px; width: 90%;
+      border-radius: 20px; overflow: hidden;
+      background: #000;
+      box-shadow: 0 30px 80px rgba(0,0,0,0.8);
+      animation: popIn 0.25s cubic-bezier(0.34,1.56,0.64,1);
+    }
+
+    @keyframes popIn {
+      from { transform: scale(0.85); opacity: 0; }
+      to   { transform: scale(1);    opacity: 1; }
+    }
+
+    .modal-close {
+      position: absolute; top: 14px; right: 14px; z-index: 10;
+      background: rgba(0,0,0,0.5); border: 1.5px solid rgba(255,255,255,0.15);
+      border-radius: 50%; width: 36px; height: 36px;
+      display: grid; place-items: center;
+      cursor: pointer; font-size: 16px; color: #fff;
+      backdrop-filter: blur(8px);
+      transition: background 0.2s;
+    }
+
+    .modal-close:hover { background: rgba(255,77,141,0.4); }
+
+    .modal-video {
+      width: 100%;
+      display: block;
+      max-height: 85vh;
+      object-fit: contain;
+    }
+
+    .modal-info {
+      padding: 16px 18px;
+      background: var(--card);
+    }
+
+    .modal-title {
+      font-size: 0.92rem; font-weight: 700;
+      margin-bottom: 12px;
+    }
+
+    .modal-dl-btn {
+      width: 100%;
+      padding: 12px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      color: #fff; border: none; border-radius: 10px;
+      font-size: 0.9rem; font-weight: 700; font-family: inherit;
+      cursor: pointer; transition: opacity 0.2s;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+    }
+
+    .modal-dl-btn:hover { opacity: 0.88; }
+
+    /* ── ZIP STATUS ── */
+    #zipStatus {
       display: none;
-      background: rgba(233,69,96,.12);
-      border: 1px solid var(--accent);
-      border-radius: var(--radius);
-      padding: 18px 22px;
-      color: #ffaaaa;
-      font-size: .9rem;
+      padding: 14px 18px; border-radius: 12px; font-size: 0.88rem;
+      margin-top: 14px; line-height: 1.5;
     }
 
-    
-    .how-it-works h3 { font-size: 1rem; margin-bottom: 16px; color: var(--muted); letter-spacing: .05em; text-transform: uppercase; }
-    .hows {
-      display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px;
-    }
-    .how-step {
-      background: rgba(255,255,255,.03);
-      border: 1px solid rgba(255,255,255,.06);
-      border-radius: 12px; padding: 18px;
-    }
-    .how-step .n { font-size: 1.8rem; font-weight: 900; color: rgba(233,69,96,.3); line-height: 1; }
-    .how-step h4 { font-size: .85rem; margin: 6px 0 4px; }
-    .how-step p  { font-size: .75rem; color: var(--muted); line-height: 1.5; }
+    /* ── HOW IT WORKS ── */
+    .how-section { }
 
-    
+    .section-label {
+      font-size: 0.72rem; font-weight: 700; color: var(--muted);
+      letter-spacing: 0.1em; text-transform: uppercase;
+      margin-bottom: 16px;
+    }
+
+    .how-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+      gap: 14px;
+    }
+
+    .how-card {
+      background: rgba(255,255,255,0.02);
+      border: 1px solid var(--border);
+      border-radius: 14px; padding: 20px;
+      transition: border-color 0.2s, background 0.2s;
+    }
+
+    .how-card:hover {
+      border-color: rgba(108,99,255,0.3);
+      background: rgba(108,99,255,0.04);
+    }
+
+    .how-num { font-size: 2rem; font-weight: 900; color: rgba(108,99,255,0.3); line-height: 1; }
+    .how-card h3 { font-size: 0.88rem; font-weight: 700; margin: 8px 0 5px; }
+    .how-card p  { font-size: 0.76rem; color: var(--muted); line-height: 1.6; }
+
+    /* ── FOOTER ── */
     footer {
-      text-align: center; padding: 24px;
-      font-size: .78rem; color: var(--muted);
-      border-top: 1px solid rgba(255,255,255,.05);
+      text-align: center; padding: 28px 24px;
+      font-size: 0.78rem; color: var(--muted);
+      border-top: 1px solid var(--border);
+    }
+
+    footer a { color: var(--accent); text-decoration: none; }
+
+    /* ── FLOATING TOAST ── */
+    #toast {
+      position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 12px; padding: 14px 22px;
+      font-size: 0.88rem; color: var(--text);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+      z-index: 9999; opacity: 0; pointer-events: none;
+      transition: opacity 0.3s, transform 0.3s;
+      transform: translateX(-50%) translateY(10px);
+      white-space: nowrap;
+    }
+
+    #toast.show {
+      opacity: 1; transform: translateX(-50%) translateY(0);
+    }
+
+    /* ── EMPTY STATE ── */
+    .empty-state {
+      text-align: center; padding: 60px 20px;
+      color: var(--muted);
+    }
+
+    .empty-icon { font-size: 3.5rem; margin-bottom: 12px; opacity: 0.4; }
+
+    /* ── RESPONSIVE ── */
+    @media (max-width: 600px) {
+      header { padding: 14px 20px; }
+      main { padding: 32px 16px 80px; }
+      .url-row { flex-direction: column; }
+      .btn-convert { width: 100%; justify-content: center; }
+      .shorts-grid { grid-template-columns: 1fr 1fr; }
+      .hero h1 { font-size: 1.8rem; }
+    }
+
+    @media (max-width: 400px) {
+      .shorts-grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
 <body>
 
+<!-- ── MODAL PREVIEW ── -->
+<div class="modal-overlay" id="modalOverlay" onclick="closeModal(event)">
+  <div class="modal-inner">
+    <button class="modal-close" onclick="closeModal(null, true)">✕</button>
+    <video class="modal-video" id="modalVideo" controls playsinline></video>
+    <div class="modal-info">
+      <div class="modal-title" id="modalTitle"></div>
+      <button class="modal-dl-btn" id="modalDlBtn">⬇ Download This Short</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── TOAST ── -->
+<div id="toast"></div>
+
+<!-- ── HEADER ── -->
 <header>
-  <div class="logo">▶</div>
-  <h1>YT → <span>Shorts</span> Converter</h1>
-  <span class="badge">B.Tech AI · 6th Sem Project</span>
+  <div class="logo-wrap">
+    <div class="logo-icon">✂️</div>
+    <div class="logo-text">Shorts<span>AI</span></div>
+  </div>
+  <span class="header-badge">Powered by Groq AI</span>
 </header>
 
+<!-- ── MAIN ── -->
 <main>
 
-  
+  <!-- Hero -->
   <div class="hero">
-    <h2>Turn any long YouTube video into<br><em>5–6 smart shorts</em> instantly</h2>
-    <p>Paste a link. Our AI transcribes, analyzes key concepts, cuts the best segments,<br>
-       and exports vertical shorts — so viewers get the full picture in minutes.</p>
+    <div class="hero-eyebrow">✨ AI-Powered Short Clips</div>
+    <h1>Turn YouTube Videos into<br><span class="gradient-text">Viral Shorts Instantly</span></h1>
+    <p>Paste any YouTube link. Our AI transcribes, analyzes key moments, and creates 5–6 ready-to-post short videos for you.</p>
+    <div class="hero-stats">
+      <div class="stat"><div class="stat-num">100%</div><div class="stat-label">Free</div></div>
+      <div class="stat"><div class="stat-num">5–6</div><div class="stat-label">Shorts per video</div></div>
+      <div class="stat"><div class="stat-num">AI</div><div class="stat-label">Groq + Whisper</div></div>
+    </div>
   </div>
 
-  
-  <div class="card">
-    <div class="input-row">
+  <!-- Input Card -->
+  <div class="input-card">
+    <label class="input-label" for="urlInput">🔗 YouTube Video URL</label>
+    <div class="url-row">
       <input id="urlInput" class="url-input" type="url"
-             placeholder="https://www.youtube.com/watch?v=..." />
-      <button id="convertBtn" class="btn btn-primary" onclick="startConversion()">
-        ⚡ Convert
+             placeholder="https://www.youtube.com/watch?v=..." autocomplete="off" />
+      <button id="convertBtn" class="btn-convert" onclick="startConversion()">
+        <span id="convertBtnIcon">⚡</span>
+        <span id="convertBtnText">Convert to Shorts</span>
       </button>
     </div>
-    
-    <div class="input-row" style="margin-top: 14px;">
-      <input id="downloadPathInput" class="url-input" type="text"
-             placeholder="Local Save Folder (Optional, e.g. C:\Users\ranin\Downloads)" style="flex: 1;" />
-      <button id="browseBtn" class="btn" style="background: rgba(255,255,255,0.05); color: var(--text); border: 1.5px solid rgba(255,255,255,0.12);" onclick="browseDirectory()">
-        📁 Browse...
-      </button>
-    </div>
-    <div id="localWarning" style="margin-top: 8px; font-size: 0.8rem; display: none; line-height: 1.4;"></div>
 
     <div class="options-row">
-      <label><input type="checkbox" id="cropCheck" checked> Crop to 9:16 vertical</label>
-      <label><input type="checkbox" id="captionCheck" checked> Key-concept captions</label>
+      <label class="toggle-label">
+        <input type="checkbox" id="cropCheck" checked>
+        Crop to 9:16 vertical
+      </label>
+      <label class="toggle-label">
+        <input type="checkbox" id="captionCheck" checked>
+        AI concept captions
+      </label>
     </div>
   </div>
 
-  
-  <div id="progress-section" class="card">
-    <div class="steps">
-      <div class="step" id="s1"><span class="step-icon">⬇️</span>Download</div>
-      <div class="step" id="s2"><span class="step-icon">🎙️</span>Transcribe</div>
-      <div class="step" id="s3"><span class="step-icon">🤖</span>AI Analysis</div>
-      <div class="step" id="s4"><span class="step-icon">✂️</span>Clip & Export</div>
+  <!-- Progress -->
+  <div id="progress-section">
+    <div class="progress-card">
+      <div class="steps-row">
+        <div class="step-pill" id="s1"><span class="step-icon">⬇️</span>Download</div>
+        <div class="step-pill" id="s2"><span class="step-icon">🎙️</span>Transcribe</div>
+        <div class="step-pill" id="s3"><span class="step-icon">🤖</span>AI Analysis</div>
+        <div class="step-pill" id="s4"><span class="step-icon">✂️</span>Export</div>
+      </div>
+      <div class="progress-bar-track">
+        <div class="progress-bar-fill" id="progressBar"></div>
+      </div>
+      <div class="progress-status" id="progressLabel">Starting…</div>
     </div>
-    <div class="progress-bar-wrap"><div class="progress-bar" id="progressBar"></div></div>
-    <div class="progress-label" id="progressLabel">Starting…</div>
   </div>
 
-  
-  <div id="error-section">
+  <!-- Error -->
+  <div id="error-section" style="display:none; background: rgba(255,77,141,0.08); border: 1px solid rgba(255,77,141,0.3); border-radius: var(--radius); padding: 20px 24px; color: #ffb3cb; font-size: 0.92rem; display:none;">
     <strong>❌ Error:</strong> <span id="errorMsg"></span>
   </div>
 
-  
+  <!-- Results -->
   <div id="results-section">
+
     <div class="results-header">
-      <h3>🎬 Your Shorts are Ready</h3>
-      <div style="display: flex; gap: 12px; align-items: center;">
-        <span class="count" id="resultCount">0 Shorts</span>
-        <button class="btn" style="padding: 6px 12px; font-size: 0.75rem; font-weight: bold; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); color: var(--text); border-radius: 8px; cursor: pointer; transition: background 0.15s;" onclick="clearHistory()">Clear History</button>
+      <div class="results-title">
+        <h2>🎬 Your Shorts</h2>
+        <span class="count-badge" id="resultCount">0 Shorts</span>
       </div>
-    </div>
-    <div id="folderSaveNotice" style="display: none; background: rgba(95, 255, 157, 0.1); border: 1px solid rgba(95, 255, 157, 0.3); border-radius: var(--radius); padding: 14px 18px; margin-bottom: 20px; font-size: 0.95rem; color: #5fff9d; word-break: break-all;">
-       <strong>💾 Saved Locally:</strong> Your shorts have been saved directly to <span id="localSavedPath" style="font-family: monospace; background: rgba(0,0,0,0.3); padding: 2px 8px; margin-left: 6px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1);"></span>
+      <div class="results-actions">
+        <button class="btn-outline" onclick="clearHistory()">🗑 Clear</button>
+        <button class="btn-zip" onclick="downloadAllZip()" id="zipBtn">📦 Download All (ZIP)</button>
+      </div>
     </div>
 
-    <!-- Export & Save Options Panel -->
-    <div id="exportPanel" class="card" style="background: rgba(255,255,255,0.02); border: 1.5px dashed rgba(255,255,255,0.12); margin-bottom: 20px; display: flex; flex-direction: column; gap: 14px; padding: 20px;">
-      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-        <h4 style="font-size: 1.05rem; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 8px; margin: 0;">
-          📥 Export & Save Options
-        </h4>
-        <button class="btn" style="background: linear-gradient(135deg, var(--purple), var(--accent)); padding: 8px 16px; font-size: 0.85rem; color: white;" onclick="exportAllAsZip()">
-          📦 Download All (ZIP)
-        </button>
-      </div>
-      <p id="exportLabelText" style="font-size: 0.85rem; color: var(--muted); line-height: 1.4; margin: 0;">
-        Export all generated MP4 shorts to a custom folder on your computer:
-      </p>
-      <div id="exportActionRow" style="display: flex; gap: 10px; flex-wrap: wrap;">
-        <input id="exportPathInput" class="url-input" type="text"
-               placeholder="Local Save Folder (e.g. C:\Users\ranin\Downloads)" style="flex: 1; padding: 10px 14px; font-size: 0.9rem;" />
-        <button id="exportBrowseBtn" class="btn" style="background: rgba(255,255,255,0.05); color: var(--text); border: 1.5px solid rgba(255,255,255,0.12); padding: 10px 16px; font-size: 0.9rem;" onclick="browseExportDirectory()">
-          📁 Browse...
-        </button>
-        <button id="exportLocalBtn" class="btn btn-primary" style="padding: 10px 20px; font-size: 0.9rem; font-weight: 700;" onclick="exportToLocalPath()">
-          💾 Export to Path
-        </button>
-      </div>
-      <div id="exportStatus" style="display: none; padding: 12px; border-radius: 8px; font-size: 0.88rem; line-height: 1.4; margin-top: 4px;"></div>
-    </div>
-
+    <div id="zipStatus"></div>
     <div class="shorts-grid" id="shortsGrid"></div>
+
   </div>
 
-  
-  <div class="how-it-works card">
-    <h3>How It Works</h3>
-    <div class="hows">
-      <div class="how-step">
-        <div class="n">01</div>
-        <h4>YouTube Download</h4>
-        <p>yt-dlp fetches the best quality MP4 directly from YouTube.</p>
+  <!-- How it works -->
+  <div class="how-section">
+    <div class="section-label">How it works</div>
+    <div class="how-grid">
+      <div class="how-card">
+        <div class="how-num">01</div>
+        <h3>YouTube Download</h3>
+        <p>yt-dlp fetches the video in best quality MP4 directly from YouTube.</p>
       </div>
-      <div class="how-step">
-        <div class="n">02</div>
-        <h4>Whisper Transcription</h4>
-        <p>OpenAI Whisper converts speech to a timestamped transcript.</p>
+      <div class="how-card">
+        <div class="how-num">02</div>
+        <h3>Groq Whisper</h3>
+        <p>whisper-large-v3 via Groq API converts speech to a timestamped transcript at lightning speed.</p>
       </div>
-      <div class="how-step">
-        <div class="n">03</div>
-        <h4>GPT-4 Analysis</h4>
-        <p>GPT-4o reads the transcript and identifies the 5–6 most important segments.</p>
+      <div class="how-card">
+        <div class="how-num">03</div>
+        <h3>LLaMA-3 Analysis</h3>
+        <p>LLaMA-3 70B reads the transcript and picks the 5–6 most important segments to clip.</p>
       </div>
-      <div class="how-step">
-        <div class="n">04</div>
-        <h4>Auto Clipping</h4>
-        <p>MoviePy cuts the video, adds concept captions, and exports 9:16 shorts.</p>
+      <div class="how-card">
+        <div class="how-num">04</div>
+        <h3>Auto Export</h3>
+        <p>FFmpeg cuts each clip, crops to 9:16, and adds AI-generated concept captions.</p>
       </div>
     </div>
   </div>
@@ -371,161 +782,89 @@
 </main>
 
 <footer>
-  Made with ♥ for B.Tech AI — 6th Semester Project &nbsp;|&nbsp;
-  Stack: Python · Flask · Whisper · GPT-4 · MoviePy · yt-dlp
+  Built with ♥ using Python · Flask · Groq AI · Whisper · FFmpeg · yt-dlp
 </footer>
 
 <script>
-// Retrieve API URL
-// Check if hostname is local
-function isLocalHost(hn) {
-  if (window.location.port === "5000") {
-    return true;
-  }
-  return hn === "localhost" || 
-         hn === "127.0.0.1" || 
-         hn.endsWith(".local") ||
-         hn.startsWith("192.168.") || 
-         hn.startsWith("10.") || 
-         hn.startsWith("172.16.") || 
-         hn.startsWith("172.17.") || 
-         hn.startsWith("172.18.") || 
-         hn.startsWith("172.19.") || 
-         hn.startsWith("172.2") || 
-         hn.startsWith("172.3") || 
-         hn === "[::1]" || 
-         hn === "";
-}
-
-// Retrieve API URL
-function getApiUrl() {
+/* ═══════════════════════════════════════════════
+   API CONFIGURATION
+═══════════════════════════════════════════════ */
+function isLocalEnv() {
   const hn = window.location.hostname;
   const port = window.location.port;
+  if (port === "5000") return true;
+  return hn === "localhost" || hn === "127.0.0.1" ||
+         hn === "" || hn === "[::1]" ||
+         hn.endsWith(".local") ||
+         hn.startsWith("192.168.") ||
+         hn.startsWith("10.") ||
+         /^172\.(1[6-9]|2\d|3[01])\./.test(hn);
+}
 
-  if (isLocalHost(hn)) {
-    if (port === "5000") {
-      return "/api";
-    }
-    const host = hn || "localhost";
-    return `http://${host}:5000/api`;
+function getAPI() {
+  if (isLocalEnv()) {
+    const hn = window.location.hostname || "localhost";
+    return window.location.port === "5000"
+      ? "/api"
+      : `http://${hn}:5000/api`;
   }
   return "https://yt-shorts-converter-1.onrender.com/api";
 }
 
-let API = getApiUrl();
+const API = getAPI();
+const LS_KEY = "SHORTSAI_LAST_RESULTS";
 
-function updateLocalSaveUI() {
-  const isLocal = isLocalHost(window.location.hostname);
-  const localWarning = document.getElementById("localWarning");
-  const pathInput = document.getElementById("downloadPathInput");
-  const browseBtn = document.getElementById("browseBtn");
-  
-  if (!isLocal) {
-    pathInput.disabled = true;
-    pathInput.value = "";
-    pathInput.placeholder = "Local saving disabled in Cloud mode";
-    browseBtn.disabled = true;
-    localWarning.style.display = "block";
-    localWarning.style.color = "var(--muted)";
-    localWarning.innerHTML = "ℹ️ Running on cloud server. Direct folder saving is disabled. Use the ZIP download or individual downloads below.";
-    
-    const exportActionRow = document.getElementById("exportActionRow");
-    if (exportActionRow) exportActionRow.style.display = "none";
-    const exportLabelText = document.getElementById("exportLabelText");
-    if (exportLabelText) exportLabelText.innerHTML = "ℹ️ Running on cloud server. Direct folder export is disabled. Use the ZIP download above instead.";
-  } else {
-    pathInput.disabled = false;
-    pathInput.placeholder = "Local Save Folder (Optional, e.g. C:\\Users\\ranin\\Downloads)";
-    browseBtn.disabled = false;
-    localWarning.style.display = "none";
-    const exportActionRow = document.getElementById("exportActionRow");
-    if (exportActionRow) exportActionRow.style.display = "flex";
-    const exportLabelText = document.getElementById("exportLabelText");
-    if (exportLabelText) exportLabelText.textContent = "Export all generated MP4 shorts to a custom folder on your computer:";
-  }
-}
+/* ═══════════════════════════════════════════════
+   STATE
+═══════════════════════════════════════════════ */
+let currentFiles = [];
+let pollTimer    = null;
+let modalFilename = "";
 
-// Update UI key inputs on load
+/* ═══════════════════════════════════════════════
+   LOAD SAVED RESULTS ON PAGE LOAD
+═══════════════════════════════════════════════ */
 window.addEventListener("DOMContentLoaded", () => {
-  // Load saved local save path
-  const savedPath = localStorage.getItem("YT_SHORTS_DOWNLOAD_PATH");
-  if (savedPath) {
-    document.getElementById("downloadPathInput").value = savedPath;
-  }
-  
-  updateLocalSaveUI();
-
-  // Load recently converted shorts if they exist in localStorage and are less than 24 hours old
-  const savedShortsRaw = localStorage.getItem("LAST_CONVERTED_SHORTS");
-  if (savedShortsRaw) {
-    try {
-      const savedShorts = JSON.parse(savedShortsRaw);
-      if (Date.now() - savedShorts.timestamp < 24 * 60 * 60 * 1000) {
-        setTimeout(() => renderResults(savedShorts.files, savedShorts.saved_to), 100);
-      } else {
-        localStorage.removeItem("LAST_CONVERTED_SHORTS");
-      }
-    } catch (e) {
-      localStorage.removeItem("LAST_CONVERTED_SHORTS");
+  const raw = localStorage.getItem(LS_KEY);
+  if (!raw) return;
+  try {
+    const saved = JSON.parse(raw);
+    const age = Date.now() - (saved.timestamp || 0);
+    if (age < 24 * 60 * 60 * 1000) {
+      setTimeout(() => renderResults(saved.files), 200);
+    } else {
+      localStorage.removeItem(LS_KEY);
     }
+  } catch(e) {
+    localStorage.removeItem(LS_KEY);
   }
 });
 
-let pollTimer = null;
-
-async function browseDirectory() {
-  const btn = document.getElementById("browseBtn");
-  const input = document.getElementById("downloadPathInput");
-  const originalHtml = btn.innerHTML;
-  
-  btn.disabled = true;
-  btn.innerHTML = "⌛ Picking...";
-  
-  try {
-    const res = await fetch(`${API}/select-directory`);
-    if (!res.ok) throw new Error("Could not contact server to open folder picker.");
-    const data = await res.json();
-    if (data.directory) {
-      input.value = data.directory;
-    }
-  } catch (e) {
-    alert("Could not select folder automatically. Please paste the path manually.");
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = originalHtml;
-  }
-}
-
+/* ═══════════════════════════════════════════════
+   CONVERSION
+═══════════════════════════════════════════════ */
 async function startConversion() {
   const btn = document.getElementById("convertBtn");
   if (btn.disabled) return;
 
   const url = document.getElementById("urlInput").value.trim();
-  if (!url) { alert("Please enter a YouTube URL."); return; }
-
-  const downloadPath = document.getElementById("downloadPathInput").value.trim();
-
-  // Save the download path selection
-  if (downloadPath) {
-    localStorage.setItem("YT_SHORTS_DOWNLOAD_PATH", downloadPath);
-  } else {
-    localStorage.removeItem("YT_SHORTS_DOWNLOAD_PATH");
+  if (!url) { showToast("⚠️ Please paste a YouTube URL first"); return; }
+  if (!url.includes("youtube.com") && !url.includes("youtu.be")) {
+    showToast("⚠️ Please enter a valid YouTube URL"); return;
   }
 
-  // Lock input elements
+  // Lock UI
+  btn.disabled = true;
   document.getElementById("urlInput").disabled = true;
-  document.getElementById("downloadPathInput").disabled = true;
-  document.getElementById("browseBtn").disabled = true;
   document.getElementById("cropCheck").disabled = true;
   document.getElementById("captionCheck").disabled = true;
-  btn.disabled = true;
-  btn.innerHTML = "⏳ Generating...";
+  document.getElementById("convertBtnIcon").textContent = "⏳";
+  document.getElementById("convertBtnText").textContent = "Processing…";
 
-  // Reset UI
-  hide("results-section"); hide("error-section");
+  hide("results-section");
+  hide("error-section");
   show("progress-section");
-  setStep(1);
-  setProgress(5, "Sending request to server…");
+  setStep(1); setProgress(5, "Sending to server…");
 
   try {
     const res = await fetch(`${API}/convert`, {
@@ -534,13 +873,13 @@ async function startConversion() {
       body: JSON.stringify({
         url,
         crop: document.getElementById("cropCheck").checked,
-        download_path: downloadPath
+        download_path: ""
       })
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Server error");
     pollJob(data.job_id);
-  } catch (e) {
+  } catch(e) {
     showError(e.message);
   }
 }
@@ -553,248 +892,301 @@ function pollJob(jobId) {
       const res  = await fetch(`${API}/status/${jobId}`);
       const data = await res.json();
 
-      if (tick < 5)  { setStep(1); setProgress(15, "Downloading video from YouTube…"); }
-      else if (tick < 20) { setStep(2); setProgress(30 + tick, "Transcribing with Whisper…"); }
-      else if (tick < 30) { setStep(3); setProgress(60 + tick * 0.5, "AI analyzing key moments…"); }
-      else           { setStep(4); setProgress(85, "Cutting & exporting shorts…"); }
+      if      (tick < 5)  { setStep(1); setProgress(15, "📥 Downloading video from YouTube…"); }
+      else if (tick < 20) { setStep(2); setProgress(30 + tick, "🎙️ Transcribing audio with Whisper…"); }
+      else if (tick < 30) { setStep(3); setProgress(60 + tick * 0.5, "🤖 AI analyzing key moments…"); }
+      else                { setStep(4); setProgress(Math.min(95, 75 + tick * 0.3), "✂️ Cutting & exporting shorts…"); }
 
       if (data.status === "done") {
         clearInterval(pollTimer);
         setStep(4, true);
-        setProgress(100, "Done! 🎉");
-        
-        // Save to browser LocalStorage
-        localStorage.setItem("LAST_CONVERTED_SHORTS", JSON.stringify({
+        setProgress(100, "✅ Done! Your shorts are ready.");
+
+        // Persist to localStorage
+        localStorage.setItem(LS_KEY, JSON.stringify({
           files: data.files,
-          timestamp: Date.now(),
-          saved_to: data.saved_to
+          timestamp: Date.now()
         }));
 
-        setTimeout(() => renderResults(data.files, data.saved_to), 600);
+        setTimeout(() => renderResults(data.files), 700);
+
       } else if (data.status === "error") {
         clearInterval(pollTimer);
-        showError(data.error);
+        showError(data.error || "An unknown error occurred.");
       }
-    } catch (e) {
+    } catch(e) {
       clearInterval(pollTimer);
-      showError("Lost connection to server.");
+      showError("Lost connection to server. Please try again.");
     }
   }, 3000);
 }
 
-const emojis = ["📐","💡","🔬","📊","⚙️","🧮","🔑","📝","🧪","🎯"];
-let currentFilesList = [];
-
-function renderResults(files, savedTo = null) {
-  currentFilesList = files;
+/* ═══════════════════════════════════════════════
+   RENDER RESULTS
+═══════════════════════════════════════════════ */
+function renderResults(files) {
+  currentFiles = files;
   hide("progress-section");
   show("results-section");
   document.getElementById("resultCount").textContent = `${files.length} Shorts`;
-  
-  const notice = document.getElementById("folderSaveNotice");
-  if (savedTo) {
-    const isLocal = isLocalHost(window.location.hostname);
-    if (isLocal) {
-      document.getElementById("localSavedPath").textContent = savedTo;
-      notice.style.display = "block";
-    } else {
-      notice.style.display = "none";
-    }
-  } else {
-    notice.style.display = "none";
-  }
-
-  // Pre-fill the export path input with standard download path choice
-  const defaultPath = document.getElementById("downloadPathInput").value.trim() || localStorage.getItem("YT_SHORTS_DOWNLOAD_PATH") || "";
-  document.getElementById("exportPathInput").value = defaultPath;
-  hide("exportStatus");
+  hide("zipStatus");
 
   const grid = document.getElementById("shortsGrid");
   grid.innerHTML = "";
 
   files.forEach((filename, i) => {
-    const title = filename
-      .replace(/^short_\d+_/, "")
-      .replace(/_/g, " ")
-      .replace(/\.mp4$/, "");
-
-    const card = document.createElement("div");
-    card.className = "short-card";
-    card.innerHTML = `
-      <div class="short-thumb">
-        ${emojis[i % emojis.length]}
-        <span class="short-num">Short ${i + 1}</span>
-      </div>
-      <div class="short-info">
-        <h4>${capitalize(title)}</h4>
-        <p>Key concept short — covers the core idea for quick learning.</p>
-      </div>
-      <div class="short-actions">
-        <button class="btn-dl" onclick="downloadShort('${filename}')">⬇ Download</button>
-      </div>`;
+    const title = friendlyTitle(filename, i);
+    const videoUrl = `${API}/download/${encodeURIComponent(filename)}`;
+    const card = buildShortCard(filename, title, videoUrl, i);
     grid.appendChild(card);
   });
 
-  // Re-enable input elements
-  document.getElementById("urlInput").disabled = false;
-  document.getElementById("cropCheck").disabled = false;
-  document.getElementById("captionCheck").disabled = false;
-  updateLocalSaveUI();
-  const btn = document.getElementById("convertBtn");
-  btn.disabled = false;
-  btn.innerHTML = "⚡ Convert";
+  unlockUI();
 }
 
-async function downloadShort(filename) {
+function friendlyTitle(filename, idx) {
+  return filename
+    .replace(/^short_\d+_/, "")
+    .replace(/_/g, " ")
+    .replace(/\.mp4$/i, "")
+    .replace(/\b\w/g, c => c.toUpperCase())
+    || `Short ${idx + 1}`;
+}
+
+function buildShortCard(filename, title, videoUrl, idx) {
+  const card = document.createElement("div");
+  card.className = "short-card";
+
+  card.innerHTML = `
+    <div class="video-wrapper" id="wrap-${idx}">
+      <span class="video-num">Short ${idx + 1}</span>
+      
+      <!-- Loading indicator (shown while video loads) -->
+      <div class="video-loading" id="loader-${idx}">
+        <div class="spinner"></div>
+        <span>Loading preview…</span>
+      </div>
+
+      <!-- The actual video player -->
+      <video class="short-video" id="vid-${idx}"
+             preload="metadata"
+             playsinline
+             loop
+             style="display:none;"
+             src="${videoUrl}">
+      </video>
+
+      <!-- Gradient overlay -->
+      <div class="video-overlay"></div>
+
+      <!-- Play/pause button -->
+      <div class="play-btn" id="playbtn-${idx}" onclick="togglePlay(${idx}, '${filename}', '${escapeTitle(title)}')">
+        <div class="play-circle" id="playicon-${idx}">▶</div>
+      </div>
+    </div>
+
+    <div class="short-info">
+      <h4>${escapeHtml(title)}</h4>
+      <div class="short-meta">
+        <span>MP4</span>
+        <span class="meta-dot"></span>
+        <span>9:16</span>
+        <span class="meta-dot"></span>
+        <span>AI-curated</span>
+      </div>
+    </div>
+
+    <div class="short-actions">
+      <button class="btn-dl-single" onclick="downloadSingle('${filename}')">⬇ Download</button>
+      <button class="btn-preview-fullscreen" onclick="openModal('${filename}', '${escapeTitle(title)}')">⛶ Preview</button>
+    </div>
+  `;
+
+  // After inserting, wire up video events
+  setTimeout(() => {
+    const vid = document.getElementById(`vid-${idx}`);
+    const loader = document.getElementById(`loader-${idx}`);
+    if (!vid) return;
+
+    vid.addEventListener("loadedmetadata", () => {
+      vid.style.display = "block";
+      if (loader) loader.style.display = "none";
+    });
+
+    vid.addEventListener("error", () => {
+      if (loader) {
+        loader.innerHTML = `<span style="color:var(--muted); font-size:0.75rem; text-align:center; padding:10px;">Preview unavailable<br>Use Download button</span>`;
+      }
+    });
+  }, 0);
+
+  return card;
+}
+
+function escapeHtml(s) {
+  return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+
+function escapeTitle(s) {
+  return s.replace(/'/g, "\\'").replace(/"/g, "&quot;");
+}
+
+/* ═══════════════════════════════════════════════
+   PLAY / PAUSE INLINE
+═══════════════════════════════════════════════ */
+let activeVidIdx = -1;
+
+function togglePlay(idx, filename, title) {
+  const vid     = document.getElementById(`vid-${idx}`);
+  const playBtn = document.getElementById(`playbtn-${idx}`);
+  const icon    = document.getElementById(`playicon-${idx}`);
+
+  if (!vid || vid.style.display === "none") return;
+
+  // If another video is playing, pause it
+  if (activeVidIdx !== -1 && activeVidIdx !== idx) {
+    const oldVid  = document.getElementById(`vid-${activeVidIdx}`);
+    const oldIcon = document.getElementById(`playicon-${activeVidIdx}`);
+    if (oldVid) oldVid.pause();
+    if (oldIcon) oldIcon.textContent = "▶";
+  }
+
+  if (vid.paused) {
+    vid.play().then(() => {
+      icon.textContent = "⏸";
+      activeVidIdx = idx;
+    }).catch(() => {
+      // autoplay blocked — open modal instead
+      openModal(filename, title);
+    });
+  } else {
+    vid.pause();
+    icon.textContent = "▶";
+    activeVidIdx = -1;
+  }
+}
+
+/* ═══════════════════════════════════════════════
+   MODAL FULLSCREEN PREVIEW
+═══════════════════════════════════════════════ */
+function openModal(filename, title) {
+  modalFilename = filename;
+  const videoUrl = `${API}/download/${encodeURIComponent(filename)}`;
+
+  document.getElementById("modalVideo").src = videoUrl;
+  document.getElementById("modalTitle").textContent = title;
+  document.getElementById("modalDlBtn").onclick = () => downloadSingle(filename);
+  document.getElementById("modalOverlay").classList.add("open");
+  document.getElementById("modalVideo").play().catch(() => {});
+  document.body.style.overflow = "hidden";
+}
+
+function closeModal(e, force = false) {
+  if (force || e?.target === document.getElementById("modalOverlay")) {
+    document.getElementById("modalOverlay").classList.remove("open");
+    const v = document.getElementById("modalVideo");
+    v.pause(); v.src = "";
+    document.body.style.overflow = "";
+  }
+}
+
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") closeModal(null, true);
+});
+
+/* ═══════════════════════════════════════════════
+   DOWNLOADS
+═══════════════════════════════════════════════ */
+async function downloadSingle(filename) {
+  showToast("⬇️ Preparing download…");
   try {
     const url = `${API}/download/${encodeURIComponent(filename)}`;
-    const response = await fetch(url);
-    if (!response.ok) throw new Error("Failed to download file.");
-    const blob = await response.blob();
-    const objectUrl = URL.createObjectURL(blob);
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("Download failed");
+    const blob = await res.blob();
     const a = document.createElement("a");
-    a.href = objectUrl;
+    a.href = URL.createObjectURL(blob);
     a.download = filename;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    URL.revokeObjectURL(objectUrl);
-  } catch (e) {
-    console.error(e);
-    // fallback if blob download fails
+    URL.revokeObjectURL(a.href);
+    showToast("✅ Download started!");
+  } catch(e) {
     window.location.href = `${API}/download/${encodeURIComponent(filename)}`;
   }
 }
 
-async function browseExportDirectory() {
-  const btn = document.getElementById("exportBrowseBtn");
-  const input = document.getElementById("exportPathInput");
-  const originalHtml = btn.innerHTML;
-  
-  btn.disabled = true;
-  btn.innerHTML = "⌛...";
-  
-  try {
-    const res = await fetch(`${API}/select-directory`);
-    if (!res.ok) throw new Error("Could not contact server to open folder picker.");
-    const data = await res.json();
-    if (data.directory) {
-      input.value = data.directory;
-    }
-  } catch (e) {
-    alert("Could not select folder automatically. Please paste the path manually.");
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = originalHtml;
-  }
-}
+async function downloadAllZip() {
+  if (!currentFiles.length) return;
 
-async function exportToLocalPath() {
-  const path = document.getElementById("exportPathInput").value.trim();
-  if (!path) {
-    alert("Please specify or browse for a destination path first.");
-    return;
-  }
-  if (!currentFilesList || currentFilesList.length === 0) {
-    alert("No files available to export.");
-    return;
-  }
-  
-  const btn = document.getElementById("exportLocalBtn");
-  const statusDiv = document.getElementById("exportStatus");
-  const originalText = btn.textContent;
-  
-  btn.disabled = true;
-  btn.textContent = "Saving...";
-  statusDiv.style.display = "none";
-  
-  try {
-    const res = await fetch(`${API}/export`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        files: currentFilesList,
-        download_path: path
-      })
-    });
-    
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Export failed");
-    
-    // Save selection
-    localStorage.setItem("YT_SHORTS_DOWNLOAD_PATH", path);
-    // Update main page input path too
-    document.getElementById("downloadPathInput").value = path;
-    
-    statusDiv.style.display = "block";
-    statusDiv.style.color = "#5fff9d";
-    statusDiv.style.background = "rgba(95,255,157,0.08)";
-    statusDiv.style.borderColor = "rgba(95,255,157,0.2)";
-    statusDiv.textContent = `✅ Successfully exported ${data.copied} MP4 files to: ${data.saved_to}`;
-  } catch (e) {
-    statusDiv.style.display = "block";
-    statusDiv.style.color = "#ffaaaa";
-    statusDiv.style.background = "rgba(233,69,96,0.1)";
-    statusDiv.style.borderColor = "var(--accent)";
-    statusDiv.textContent = `❌ Export error: ${e.message}`;
-  } finally {
-    btn.disabled = false;
-    btn.textContent = originalText;
-  }
-}
+  const zipBtn   = document.getElementById("zipBtn");
+  const statusDiv = document.getElementById("zipStatus");
 
-async function exportAllAsZip() {
-  if (!currentFilesList || currentFilesList.length === 0) {
-    alert("No files available to export.");
-    return;
-  }
-  
-  const statusDiv = document.getElementById("exportStatus");
+  zipBtn.textContent = "⏳ Zipping…";
+  zipBtn.style.opacity = "0.6";
+  zipBtn.disabled = true;
+
   statusDiv.style.display = "block";
-  statusDiv.style.color = "#c4a8ff";
-  statusDiv.style.background = "rgba(83,52,131,0.15)";
-  statusDiv.style.borderColor = "var(--purple)";
-  statusDiv.textContent = "📦 Zipping MP4 files and preparing download... Please wait.";
-  
+  statusDiv.style.background = "rgba(108,99,255,0.1)";
+  statusDiv.style.border = "1px solid rgba(108,99,255,0.25)";
+  statusDiv.style.color = "#a5a0ff";
+  statusDiv.style.borderRadius = "12px";
+  statusDiv.textContent = "📦 Creating ZIP archive… This may take a moment.";
+
   try {
     const res = await fetch(`${API}/download-zip`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ files: currentFilesList })
+      body: JSON.stringify({ files: currentFiles })
     });
-    
+
     if (!res.ok) {
-      const data = await res.json();
-      throw new Error(data.error || "Failed to generate ZIP");
+      const d = await res.json();
+      throw new Error(d.error || "ZIP creation failed");
     }
-    
+
     const blob = await res.blob();
-    const objectUrl = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = objectUrl;
-    a.download = "generated_shorts_mp4.zip";
+    a.href = URL.createObjectURL(blob);
+    a.download = "shorts_ai_bundle.zip";
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    URL.revokeObjectURL(objectUrl);
-    
-    statusDiv.textContent = "✅ ZIP download started successfully!";
-  } catch (e) {
-    statusDiv.style.color = "#ffaaaa";
-    statusDiv.style.background = "rgba(233,69,96,0.1)";
-    statusDiv.style.borderColor = "var(--accent)";
-    statusDiv.textContent = `❌ ZIP creation error: ${e.message}`;
+    URL.revokeObjectURL(a.href);
+
+    statusDiv.style.background = "rgba(34,211,165,0.08)";
+    statusDiv.style.border = "1px solid rgba(34,211,165,0.25)";
+    statusDiv.style.color = "#22d3a5";
+    statusDiv.textContent = "✅ ZIP downloaded successfully!";
+
+  } catch(e) {
+    statusDiv.style.background = "rgba(255,77,141,0.08)";
+    statusDiv.style.border = "1px solid rgba(255,77,141,0.3)";
+    statusDiv.style.color = "#ffb3cb";
+    statusDiv.textContent = `❌ Error: ${e.message}`;
+  } finally {
+    zipBtn.textContent = "📦 Download All (ZIP)";
+    zipBtn.style.opacity = "";
+    zipBtn.disabled = false;
   }
 }
 
+/* ═══════════════════════════════════════════════
+   CLEAR HISTORY
+═══════════════════════════════════════════════ */
 function clearHistory() {
-  localStorage.removeItem("LAST_CONVERTED_SHORTS");
-  currentFilesList = [];
+  localStorage.removeItem(LS_KEY);
+  currentFiles = [];
+  activeVidIdx = -1;
   hide("results-section");
   document.getElementById("shortsGrid").innerHTML = "";
+  showToast("🗑 History cleared");
 }
 
-
+/* ═══════════════════════════════════════════════
+   UI HELPERS
+═══════════════════════════════════════════════ */
 function show(id) { document.getElementById(id).style.display = ""; }
 function hide(id) { document.getElementById(id).style.display = "none"; }
 
@@ -806,34 +1198,35 @@ function setProgress(pct, label) {
 function setStep(active, allDone = false) {
   for (let i = 1; i <= 4; i++) {
     const el = document.getElementById("s" + i);
-    el.className = "step" + (i < active || allDone ? " complete" : i === active ? " active" : "");
+    el.className = "step-pill" +
+      (allDone || i < active ? " done" : i === active ? " active" : "");
   }
+}
+
+function unlockUI() {
+  const btn = document.getElementById("convertBtn");
+  btn.disabled = false;
+  document.getElementById("urlInput").disabled = false;
+  document.getElementById("cropCheck").disabled = false;
+  document.getElementById("captionCheck").disabled = false;
+  document.getElementById("convertBtnIcon").textContent = "⚡";
+  document.getElementById("convertBtnText").textContent = "Convert to Shorts";
 }
 
 function showError(msg) {
   hide("progress-section");
-  show("error-section");
+  const el = document.getElementById("error-section");
+  el.style.display = "block";
   document.getElementById("errorMsg").textContent = msg;
-  
-  // Re-enable input elements
-  document.getElementById("urlInput").disabled = false;
-  document.getElementById("cropCheck").disabled = false;
-  document.getElementById("captionCheck").disabled = false;
-  updateLocalSaveUI();
-  const btn = document.getElementById("convertBtn");
-  btn.disabled = false;
-  btn.innerHTML = "⚡ Convert";
+  unlockUI();
 }
 
-function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
-
-// Test hook: query param ?test=true will mock completed shorts results
-if (new URLSearchParams(window.location.search).get("test") === "true") {
-  localStorage.setItem("LAST_CONVERTED_SHORTS", JSON.stringify({
-    files: ["short_01_getting_started_with_ai.mp4", "short_02_writing_the_first_script.mp4", "short_03_compiling_successfully.mp4"],
-    timestamp: Date.now(),
-    saved_to: "C:\\Users\\ranin\\Downloads"
-  }));
+function showToast(msg, duration = 3000) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.classList.remove("show"), duration);
 }
 </script>
 </body>
