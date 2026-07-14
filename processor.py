@@ -550,7 +550,7 @@ def export_short(source_video: Path, segment: dict, idx: int, crop: bool = True)
                 f.unlink(missing_ok=True)
 
 
-def convert(youtube_url: str, crop_to_vert: bool = True) -> list:
+def convert(youtube_url: str, crop_to_vert: bool = True, on_short_ready=None) -> list:
     print("\nYouTube Long -> Shorts Converter  [100% FREE]")
     print("=" * 52)
 
@@ -561,7 +561,14 @@ def convert(youtube_url: str, crop_to_vert: bool = True) -> list:
     print(f"\nGenerating {len(segments)} shorts...")
     paths = []
     for i, seg in enumerate(segments, 1):
-        paths.append(export_short(video_path, seg, i, crop=crop_to_vert))
+        out = export_short(video_path, seg, i, crop=crop_to_vert)
+        paths.append(out)
+        # ── Notify caller immediately so frontend can stream the card ──
+        if on_short_ready:
+            try:
+                on_short_ready(Path(out).name, i, len(segments))
+            except Exception:
+                pass
 
     print("\n" + "=" * 52)
     print("All shorts generated!\n")
@@ -570,6 +577,7 @@ def convert(youtube_url: str, crop_to_vert: bool = True) -> list:
         print(f"           Concept: {seg['key_concept']}")
         print(f"           File   : {p}\n")
     return paths
+
 
 
 if __name__ == "__main__":

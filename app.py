@@ -23,9 +23,17 @@ def run_job(job_id: str, url: str, crop: bool, download_path: str = ""):
     try:
         jobs[job_id]["status"] = "processing"
         print(f"[Job {job_id}] Starting conversion for: {url}")
-        paths = convert(url, crop_to_vert=crop)
-        
-        # If custom download_path is provided, copy/move completed shorts there!
+
+        # ── Streaming callback: called right after each short is saved ──
+        def on_short_ready(filename: str, index: int, total: int):
+            jobs[job_id]["total_shorts"] = total
+            if filename not in jobs[job_id]["files"]:
+                jobs[job_id]["files"].append(filename)
+            print(f"[Job {job_id}] Short {index}/{total} ready: {filename}")
+
+        paths = convert(url, crop_to_vert=crop, on_short_ready=on_short_ready)
+
+        # Copy to custom path if requested
         if download_path:
             import shutil
             dest_dir = Path(download_path)
@@ -33,11 +41,9 @@ def run_job(job_id: str, url: str, crop: bool, download_path: str = ""):
             print(f"[Job {job_id}] Copying files to custom download path: {download_path}")
             for p in paths:
                 orig_file = Path(p)
-                dest_file = dest_dir / orig_file.name
-                shutil.copy2(orig_file, dest_file)
-                
+                shutil.copy2(orig_file, dest_dir / orig_file.name)
+
         jobs[job_id]["status"] = "done"
-        jobs[job_id]["files"] = [Path(p).name for p in paths]
         jobs[job_id]["saved_to"] = download_path if download_path else None
         print(f"[Job {job_id}] Completed! Generated {len(paths)} shorts")
     except Exception as e:
@@ -103,7 +109,7 @@ def start_conversion():
             return jsonify({"error": "Download path must be a directory"}), 400
 
     job_id = str(uuid.uuid4())
-    jobs[job_id] = {"status": "queued", "files": [], "error": None, "saved_to": None}
+    jobs[job_id] = {"status": "queued", "files": [], "error": None, "saved_to": None, "total_shorts": 0}
 
     t = threading.Thread(target=run_job, args=(job_id, url, crop, download_path), daemon=True)
     t.start()
@@ -113,14 +119,15 @@ def start_conversion():
 
 @app.route("/api/status/<job_id>")
 def job_status(job_id: str):
-    """Poll for job completion."""
+    """Poll for job completion. Returns partial files list during processing."""
     job = jobs.get(job_id)
     if not job:
         return jsonify({"error": "job not found"}), 404
 
     resp = {
-        "status": job["status"],      # queued | processing | done | error
-        "files": [Path(f).name for f in job.get("files", [])],
+        "status": job["status"],           # queued | processing | done | error
+        "files": list(job.get("files", [])),  # grows in real-time as shorts finish
+        "total_shorts": job.get("total_shorts", 0),
         "error": job.get("error"),
         "saved_to": job.get("saved_to"),
     }

@@ -861,6 +861,11 @@ async function startConversion() {
   document.getElementById("convertBtnIcon").textContent = "⏳";
   document.getElementById("convertBtnText").textContent = "Processing…";
 
+  // Reset streaming state
+  currentFiles = [];
+  renderedFiles.clear();
+  removeGeneratingPlaceholder();
+
   hide("results-section");
   hide("error-section");
   show("progress-section");
@@ -886,61 +891,151 @@ async function startConversion() {
 
 function pollJob(jobId) {
   let tick = 0;
+  renderedFiles.clear();
+
+  // Show results panel immediately (it will fill up progressively)
+  hide("zipStatus");
+  document.getElementById("shortsGrid").innerHTML = "";
+  document.getElementById("resultCount").textContent = "0 Shorts";
+  show("results-section");
+
   pollTimer = setInterval(async () => {
     tick++;
     try {
       const res  = await fetch(`${API}/status/${jobId}`);
       const data = await res.json();
 
-      if      (tick < 5)  { setStep(1); setProgress(15, "📥 Downloading video from YouTube…"); }
-      else if (tick < 20) { setStep(2); setProgress(30 + tick, "🎙️ Transcribing audio with Whisper…"); }
-      else if (tick < 30) { setStep(3); setProgress(60 + tick * 0.5, "🤖 AI analyzing key moments…"); }
-      else                { setStep(4); setProgress(Math.min(95, 75 + tick * 0.3), "✂️ Cutting & exporting shorts…"); }
+      // ── Update step indicator based on tick & files count ──
+      const ready = (data.files || []).length;
+      const total = data.total_shorts || 0;
+
+      if (ready > 0) {
+        // Generating phase — show live export progress
+        const pct = total > 0 ? Math.round((ready / total) * 40) + 60 : 85;
+        setStep(4);
+        setProgress(pct, `✂️ Exporting shorts… ${ready}${total ? "/" + total : ""} ready`);
+      } else if (tick < 5)  { setStep(1); setProgress(15, "📥 Downloading video from YouTube…"); }
+      else if (tick < 20)   { setStep(2); setProgress(30 + tick, "🎙️ Transcribing audio with Whisper…"); }
+      else if (tick < 30)   { setStep(3); setProgress(60 + tick * 0.5, "🤖 AI analyzing key moments…"); }
+      else                  { setStep(4); setProgress(85, "✂️ Cutting & exporting shorts…"); }
+
+      // ── Stream NEW cards immediately ──
+      if (data.files && data.files.length > 0) {
+        streamNewCards(data.files, data.status !== "done");
+      }
 
       if (data.status === "done") {
         clearInterval(pollTimer);
         setStep(4, true);
-        setProgress(100, "✅ Done! Your shorts are ready.");
+        setProgress(100, "✅ All shorts are ready!");
+        removeGeneratingPlaceholder();
 
-        // Persist to localStorage
+        // Finalise
+        currentFiles = data.files;
+        document.getElementById("resultCount").textContent = `${data.files.length} Shorts`;
+
+        // Save to localStorage
         localStorage.setItem(LS_KEY, JSON.stringify({
           files: data.files,
           timestamp: Date.now()
         }));
 
-        setTimeout(() => renderResults(data.files), 700);
+        showToast("🎉 All shorts generated!");
+        unlockUI();
 
       } else if (data.status === "error") {
         clearInterval(pollTimer);
+        removeGeneratingPlaceholder();
         showError(data.error || "An unknown error occurred.");
       }
+
     } catch(e) {
       clearInterval(pollTimer);
+      removeGeneratingPlaceholder();
       showError("Lost connection to server. Please try again.");
     }
-  }, 3000);
+  }, 2000);  // poll every 2s for snappier streaming
 }
 
 /* ═══════════════════════════════════════════════
-   RENDER RESULTS
+   STREAMING CARDS
 ═══════════════════════════════════════════════ */
-function renderResults(files) {
-  currentFiles = files;
-  hide("progress-section");
-  show("results-section");
-  document.getElementById("resultCount").textContent = `${files.length} Shorts`;
-  hide("zipStatus");
+const renderedFiles = new Set();
 
-  const grid = document.getElementById("shortsGrid");
-  grid.innerHTML = "";
+function streamNewCards(files, stillGenerating) {
+  files.forEach(filename => {
+    if (renderedFiles.has(filename)) return;   // already added
+    renderedFiles.add(filename);
+    currentFiles.push(filename);
 
-  files.forEach((filename, i) => {
-    const title = friendlyTitle(filename, i);
-    const videoUrl = `${API}/download/${encodeURIComponent(filename)}`;
-    const card = buildShortCard(filename, title, videoUrl, i);
-    grid.appendChild(card);
+    const idx   = currentFiles.length - 1;
+    const title = friendlyTitle(filename, idx);
+    const url   = `${API}/download/${encodeURIComponent(filename)}`;
+    const card  = buildShortCard(filename, title, url, idx);
+
+    // Insert BEFORE the generating placeholder (if any)
+    const placeholder = document.getElementById("generating-placeholder");
+    const grid = document.getElementById("shortsGrid");
+    if (placeholder) {
+      grid.insertBefore(card, placeholder);
+    } else {
+      grid.appendChild(card);
+    }
+
+    // Slide-in animation
+    card.style.opacity = "0";
+    card.style.transform = "translateY(20px)";
+    requestAnimationFrame(() => {
+      card.style.transition = "opacity 0.4s ease, transform 0.4s ease";
+      card.style.opacity = "1";
+      card.style.transform = "";
+    });
+
+    document.getElementById("resultCount").textContent = `${currentFiles.length} Shorts`;
   });
 
+  // Show / update the "generating next…" placeholder
+  updateGeneratingPlaceholder(stillGenerating, currentFiles.length);
+}
+
+function updateGeneratingPlaceholder(show, count) {
+  let ph = document.getElementById("generating-placeholder");
+  if (!show) { if (ph) ph.remove(); return; }
+  if (!ph) {
+    ph = document.createElement("div");
+    ph.id = "generating-placeholder";
+    ph.className = "short-card";
+    ph.style.cssText = "opacity:0.5; border-style:dashed; border-color:rgba(108,99,255,0.4);";
+    document.getElementById("shortsGrid").appendChild(ph);
+  }
+  ph.innerHTML = `
+    <div class="video-wrapper" style="display:flex; align-items:center; justify-content:center; flex-direction:column; gap:10px; background:rgba(108,99,255,0.06);">
+      <div class="spinner" style="width:36px;height:36px;"></div>
+      <span style="font-size:0.78rem; color:var(--muted);">Generating short ${count + 1}…</span>
+    </div>
+    <div class="short-info">
+      <h4 style="color:var(--muted);">Processing next clip…</h4>
+      <div class="short-meta"><span>AI is cutting &amp; exporting</span></div>
+    </div>`;
+}
+
+function removeGeneratingPlaceholder() {
+  const ph = document.getElementById("generating-placeholder");
+  if (ph) ph.remove();
+}
+
+/* ═══════════════════════════════════════════════
+   RENDER RESULTS (for localStorage restore)
+═══════════════════════════════════════════════ */
+function renderResults(files) {
+  currentFiles = [];
+  renderedFiles.clear();
+  hide("progress-section");
+  hide("zipStatus");
+  show("results-section");
+  document.getElementById("resultCount").textContent = `${files.length} Shorts`;
+  document.getElementById("shortsGrid").innerHTML = "";
+  streamNewCards(files, false);
   unlockUI();
 }
 
