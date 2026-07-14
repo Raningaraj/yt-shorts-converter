@@ -145,7 +145,16 @@ def download_video(url: str):
         print(f"  Using cookies: {'from env' if is_temp else cookie_path}")
 
     base_opts = {
-        "format":               "bestvideo[ext=mp4][height<=720]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+        # Permissive format cascade — accepts whatever the proxy can get
+        # Most restrictive first, falls back to any available format
+        "format":              (
+            "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/"
+            "bestvideo[height<=720]+bestaudio/"
+            "bestvideo[ext=mp4]+bestaudio[ext=m4a]/"
+            "bestvideo+bestaudio/"
+            "best[height<=720]/"
+            "best"
+        ),
         "outtmpl":              str(DOWNLOAD_DIR / "%(id)s.%(ext)s"),
         "merge_output_format":  "mp4",
         "quiet":                True,
